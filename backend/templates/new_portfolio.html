@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crea Nuovo Portafoglio - PortfolioTracker</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="dashboard">
+    <div class="navbar">
+        <div class="nav-logo">
+            <div class="logo">PT</div>
+            <span class="nav-title">Portfolio Tracker</span>
+        </div>
+        <div class="nav-links">
+            <a href="{{ url_for('portfolios') }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Torna ai Portafogli
+            </a>
+        </div>
+    </div>
+
+    <div class="dashboard-container">
+        <h1 class="section-title">Crea Nuovo Portafoglio</h1>
+        
+        <div class="card fade-in">
+            <form action="{{ url_for('new_portfolio') }}" method="POST">
+                <div class="input-group">
+                    <label for="name">
+                        <i class="fas fa-folder"></i> Nome del Portafoglio
+                    </label>
+                    <input type="text" id="name" name="name" required 
+                           placeholder="Es. Portafoglio Azionario">
+                </div>
+                
+                <div class="input-group">
+                    <label for="description">
+                        <i class="fas fa-align-left"></i> Descrizione
+                    </label>
+                    <textarea id="description" name="description" rows="4" 
+                              placeholder="Aggiungi una breve descrizione del tuo portafoglio..."></textarea>
+                </div>
+                
+                <button type="submit" class="btn">
+                    <i class="fas fa-check"></i> Crea Portafoglio
+                </button>
+            </form>
+        </div>
+
+        <div class="card fade-in">
+            <h3><i class="fas fa-lightbulb"></i> Suggerimenti</h3>
+            <ul style="margin-top: 15px; margin-left: 20px;">
+                <li>Crea portafogli separati per diversi obiettivi finanziari</li>
+                <li>Utilizza nomi descrittivi per identificare facilmente ogni portafoglio</li>
+                <li>Aggiungi una descrizione dettagliata per ricordare la strategia del portafoglio</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>

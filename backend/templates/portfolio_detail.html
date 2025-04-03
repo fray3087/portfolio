@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ portfolio.name }} - PortfolioTracker</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="dashboard">
+    <div class="navbar">
+        <div class="nav-logo">
+            <div class="logo">PT</div>
+            <span class="nav-title">Portfolio Tracker</span>
+        </div>
+        <div class="nav-links">
+            <a href="{{ url_for('portfolios') }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Torna ai Portafogli
+            </a>
+        </div>
+    </div>
+
+    <div class="dashboard-container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <div class="header-section">
+            <h1 class="section-title">{{ portfolio.name }}</h1>
+            <button id="addAssetBtn" class="btn">
+                <i class="fas fa-plus"></i> Aggiungi Strumento
+            </button>
+        </div>
+
+        <div class="card fade-in">
+            <p><i class="fas fa-info-circle"></i> {{ portfolio.description }}</p>
+            <p class="date"><i class="far fa-calendar-alt"></i> Creato il: {{ portfolio.created_at }}</p>
+        </div>
+
+        <!-- Sommario del portafoglio -->
+        <div class="portfolio-summary fade-in">
+            <div class="summary-card">
+                <h3>Valore Totale</h3>
+                <div class="value">€ <span id="totalValue">0.00</span></div>
+            </div>
+            <div class="summary-card">
+                <h3>Variazione Giornaliera</h3>
+                <div class="value">€ <span id="dailyChange">0.00</span></div>
+                <div class="change" id="dailyChangePercent">0.00%</div>
+            </div>
+            <div class="summary-card">
+                <h3>Performance Totale</h3>
+                <div class="value">€ <span id="totalPerformance">0.00</span></div>
+                <div class="change" id="totalPerformancePercent">0.00%</div>
+            </div>
+            <div class="summary-card">
+                <h3>Strumenti</h3>
+                <div class="value">{{ portfolio.assets|length }}</div>
+            </div>
+        </div>
+
+        <h2 class="section-title"><i class="fas fa-chart-line"></i> Strumenti nel Portafoglio</h2>
+        
+        <div class="card fade-in">
+            {% if portfolio.assets %}
+                <div class="assets-list">
+                    {% for asset in portfolio.assets %}
+                        <div class="asset-card slide-in">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                                <h3>
+                                    <i class="fas fa-chart-bar"></i> {{ asset.name }} ({{ asset.symbol }})
+                                    {% if asset.type %}
+                                        <span class="asset-type">{{ asset.type }}</span>
+                                    {% endif %}
+                                </h3>
+                                <button class="btn btn-danger btn-icon delete-asset-btn" data-symbol="{{ asset.symbol }}">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                            
+                            <p class="current-price">
+                                Prezzo attuale: {{ asset.currency|default('USD') }} {{ asset.current_price|default(0)|round(2) }}
+                            </p>
+                            
+                            <h4><i class="fas fa-exchange-alt"></i> Transazioni</h4>
+                            {% if asset.transactions %}
+                            <table class="transactions-table">
+                                <thead>
+                                    <tr>
+                                        <th>Data</th>
+                                        <th>Tipo</th>
+                                        <th>Quantità</th>
+                                        <th>Prezzo</th>
+                                        <th>Totale</th>
+                                        <th>Azioni</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for transaction in asset.transactions %}
+                                    <tr>
+                                        <td>{{ transaction.date }}</td>
+                                        <td>
+                                            {% if transaction.type == 'buy' %}
+                                            <span style="color: #10b981;"><i class="fas fa-arrow-up"></i> Acquisto</span>
+                                            {% else %}
+                                            <span style="color: #ef4444;"><i class="fas fa-arrow-down"></i> Vendita</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ transaction.quantity }}</td>
+                                        <td>€ {{ "%.2f"|format(transaction.price) }}</td>
+                                        <td>€ {{ "%.2f"|format(transaction.quantity * transaction.price) }}</td>
+                                        <td>
+                                            <button class="btn btn-danger btn-icon delete-transaction-btn" 
+                                                   data-symbol="{{ asset.symbol }}" 
+                                                   data-date="{{ transaction.date }}" 
+                                                   data-type="{{ transaction.type }}" 
+                                                   data-quantity="{{ transaction.quantity }}" 
+                                                   data-price="{{ transaction.price }}">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                            {% else %}
+                            <p>Nessuna transazione registrata.</p>
+                            {% endif %}
+                            
+                            <button class="btn add-transaction-btn" data-symbol="{{ asset.symbol }}">
+                                <i class="fas fa-plus"></i> Aggiungi Transazione
+                            </button> 
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="no-assets">
+                    <p><i class="fas fa-info-circle"></i> Nessuno strumento nel portafoglio. Aggiungi il tuo primo strumento.</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Modal per aggiungere uno strumento -->
+    <div id="addAssetModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2><i class="fas fa-search"></i> Cerca Strumento</h2>
+            
+            <div class="search-container">
+                <input type="text" id="assetSearch" class="search-input" 
+                       placeholder="Cerca per simbolo o nome (es. AAPL, Apple)">
+                <div id="searchResults" class="search-results"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal per aggiungere una transazione -->
+    <div id="addTransactionModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2><i class="fas fa-exchange-alt"></i> Aggiungi Transazione</h2>
+            
+            <form id="transactionForm" action="" method="POST">
+                <div class="transaction-type-toggle">
+                    <div class="toggle-option buy active" data-type="buy">Acquisto</div>
+                    <div class="toggle-option sell" data-type="sell">Vendita</div>
+                </div>
+                
+                <div class="input-group">
+                    <label for="transactionDate">
+                        <i class="far fa-calendar-alt"></i> Data
+                    </label>
+                    <input type="date" id="transactionDate" name="date" required>
+                </div>
+                
+                <div class="input-group" style="display: none;">
+                    <label for="transactionType">Tipo</label>
+                    <select id="transactionType" name="type" required>
+                        <option value="buy" selected>Acquisto</option>
+                        <option value="sell">Vendita</option>
+                    </select>
+                </div>
+                
+                <div class="input-group">
+                    <label for="transactionQuantity">
+                        <i class="fas fa-sort-amount-up"></i> Quantità
+                    </label>
+                    <input type="number" id="transactionQuantity" name="quantity" 
+                           min="0.01" step="0.01" required>
+                </div>
+                
+                <div class="input-group">
+                    <label for="transactionPrice">
+                        <i class="fas fa-euro-sign"></i> Prezzo per unità
+                    </label>
+                    <input type="number" id="transactionPrice" name="price" 
+                           min="0.01" step="0.01" required>
+                </div>
+                
+                <button type="submit" class="btn">
+                    <i class="fas fa-plus"></i> Aggiungi Transazione
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+</html>
