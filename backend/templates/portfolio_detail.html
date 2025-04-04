@@ -98,73 +98,127 @@
             {% if portfolio.assets %}
                 <div class="assets-list">
                     {% for asset in portfolio.assets %}
-                        <div class="asset-card slide-in">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                                <h3>
-                                    <i class="fas fa-chart-bar"></i> {{ asset.name }} ({{ asset.symbol }})
-                                    {% if asset.type %}
-                                        <span class="asset-type">{{ asset.type }}</span>
-                                    {% endif %}
-                                </h3>
-                                <button class="btn btn-danger btn-icon delete-asset-btn" data-symbol="{{ asset.symbol }}">
+    <div class="asset-card slide-in">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <h3>
+                <i class="fas fa-chart-bar"></i> {{ asset.name }} ({{ asset.symbol }})
+                {% if asset.type %}
+                    <span class="asset-type">{{ asset.type }}</span>
+                {% endif %}
+            </h3>
+            <button class="btn btn-danger btn-icon delete-asset-btn" data-symbol="{{ asset.symbol }}">
+                <i class="fas fa-trash"></i>
+            </button>
+        </div>
+        
+        <div class="asset-summary">
+            <p class="current-price">
+                Prezzo attuale: {{ asset.currency|default('USD') }} <span class="price-value">{{ asset.current_price|default(0)|round(2) }}</span>
+            </p>
+                
+            <!-- Aggiungiamo qui i dettagli della performance -->
+<div class="asset-performance" id="performance-{{ asset.symbol|replace('.', '_') }}">
+    <div class="asset-performance-grid">
+        <div class="asset-performance-item">
+            <span class="label">Quantità</span>
+            <span class="value net-quantity">0</span>
+        </div>
+        <div class="asset-performance-item">
+            <span class="label">Costo Medio</span>
+            <span class="value avg-cost">€ 0,00</span>
+        </div>
+        <div class="asset-performance-item">
+            <span class="label">Valore Attuale</span>
+            <span class="value current-value">€ 0,00</span>
+        </div>
+        <div class="asset-performance-item">
+            <span class="label">P/L</span>
+            <span class="value pl-value">€ 0,00 (0,00%)</span>
+        </div>
+        <div class="asset-performance-item">
+            <span class="label">Oggi</span>
+            <span class="value daily-change">0,00%</span>
+        </div>
+        <div class="asset-performance-item">
+            <span class="label">7 Giorni</span>
+            <span class="value weekly-change">0,00%</span>
+        </div>
+        <div class="asset-performance-item">
+            <span class="label">30 Giorni</span>
+            <span class="value monthly-change">0,00%</span>
+        </div>
+        <div class="asset-performance-item">
+            <span class="label">Anno in corso</span>
+            <span class="value ytd-change">0,00%</span>
+        </div>
+    </div>
+</div>
+
+
+
+
+
+
+
+
+
+
+
+                
+            
+        </div>
+        
+        <h4><i class="fas fa-exchange-alt"></i> Transazioni</h4>
+        
+        {% if asset.transactions %}
+            <table class="transactions-table">
+                <thead>
+                    <tr>
+                        <th>Data</th>
+                        <th>Tipo</th>
+                        <th>Quantità</th>
+                        <th>Prezzo</th>
+                        <th>Totale</th>
+                        <th>Azioni</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for transaction in asset.transactions %}
+                        <tr>
+                            <td>{{ transaction.date }}</td>
+                            <td>
+                                {% if transaction.type == 'buy' %}
+                                    <span style="color: #10b981;"><i class="fas fa-arrow-up"></i> Acquisto</span>
+                                {% else %}
+                                    <span style="color: #ef4444;"><i class="fas fa-arrow-down"></i> Vendita</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ transaction.quantity }}</td>
+                            <td>€ {{ "%.2f"|format(transaction.price) }}</td>
+                            <td>€ {{ "%.2f"|format(transaction.quantity * transaction.price) }}</td>
+                            <td>
+                                <button class="btn btn-danger btn-icon delete-transaction-btn" 
+                                       data-symbol="{{ asset.symbol }}" 
+                                       data-date="{{ transaction.date }}" 
+                                       data-type="{{ transaction.type }}" 
+                                       data-quantity="{{ transaction.quantity }}" 
+                                       data-price="{{ transaction.price }}">
                                     <i class="fas fa-trash"></i>
                                 </button>
-                            </div>
-                            
-                            <p class="current-price">
-                                Prezzo attuale: {{ asset.currency|default('USD') }} {{ asset.current_price|default(0)|round(2) }}
-                            </p>
-                            
-                            <h4><i class="fas fa-exchange-alt"></i> Transazioni</h4>
-                            {% if asset.transactions %}
-                            <table class="transactions-table">
-                                <thead>
-                                    <tr>
-                                        <th>Data</th>
-                                        <th>Tipo</th>
-                                        <th>Quantità</th>
-                                        <th>Prezzo</th>
-                                        <th>Totale</th>
-                                        <th>Azioni</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for transaction in asset.transactions %}
-                                    <tr>
-                                        <td>{{ transaction.date }}</td>
-                                        <td>
-                                            {% if transaction.type == 'buy' %}
-                                            <span style="color: #10b981;"><i class="fas fa-arrow-up"></i> Acquisto</span>
-                                            {% else %}
-                                            <span style="color: #ef4444;"><i class="fas fa-arrow-down"></i> Vendita</span>
-                                            {% endif %}
-                                        </td>
-                                        <td>{{ transaction.quantity }}</td>
-                                        <td>€ {{ "%.2f"|format(transaction.price) }}</td>
-                                        <td>€ {{ "%.2f"|format(transaction.quantity * transaction.price) }}</td>
-                                        <td>
-                                            <button class="btn btn-danger btn-icon delete-transaction-btn" 
-                                                   data-symbol="{{ asset.symbol }}" 
-                                                   data-date="{{ transaction.date }}" 
-                                                   data-type="{{ transaction.type }}" 
-                                                   data-quantity="{{ transaction.quantity }}" 
-                                                   data-price="{{ transaction.price }}">
-                                                <i class="fas fa-trash"></i>
-                                            </button>
-                                        </td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                            {% else %}
-                            <p>Nessuna transazione registrata.</p>
-                            {% endif %}
-                            
-                            <button class="btn add-transaction-btn" data-symbol="{{ asset.symbol }}">
-                                <i class="fas fa-plus"></i> Aggiungi Transazione
-                            </button> 
-                        </div>
+                            </td>
+                        </tr>
                     {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p>Nessuna transazione registrata.</p>
+        {% endif %}
+        
+        <button class="btn add-transaction-btn" data-symbol="{{ asset.symbol }}">
+            <i class="fas fa-plus"></i> Aggiungi Transazione
+        </button>
+    </div>
+{% endfor %}
                 </div>
             {% else %}
                 <div class="no-assets">

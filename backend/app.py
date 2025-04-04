@@ -380,13 +380,57 @@ def update_prices(portfolio_id):
                     date_str = date.strftime('%Y-%m-%d')
                     asset['historical_prices'][date_str] = row['Close']
                 
+                # Calcola la performance dell'asset
+                daily_change = hist['Close'].pct_change().iloc[-1] * 100 if len(hist) > 1 else 0
+                weekly_change = hist['Close'].pct_change(5).iloc[-1] * 100 if len(hist) > 5 else 0
+                monthly_change = hist['Close'].pct_change(20).iloc[-1] * 100 if len(hist) > 20 else 0
+                ytd_change = (current_price / hist['Close'].iloc[0] - 1) * 100 if not hist.empty else 0
+                
+                # Calcola il costo medio e il profitto/perdita
+                buy_quantity = 0
+                buy_value = 0
+                sell_quantity = 0
+                sell_value = 0
+                
+                for transaction in asset['transactions']:
+                    if transaction['type'] == 'buy':
+                        buy_quantity += transaction['quantity']
+                        buy_value += transaction['quantity'] * transaction['price']
+                    else:  # sell
+                        sell_quantity += transaction['quantity']
+                        sell_value += transaction['quantity'] * transaction['price']
+                
+                net_quantity = buy_quantity - sell_quantity
+                
+                # Calcola il costo medio solo se abbiamo acquisti
+                avg_cost = buy_value / buy_quantity if buy_quantity > 0 else 0
+                
+                # Calcola il valore attuale e il P/L
+                current_value = net_quantity * current_price
+                investment_cost = avg_cost * net_quantity
+                pl_value = current_value - investment_cost
+                pl_percent = (pl_value / investment_cost * 100) if investment_cost > 0 else 0
+                
                 updated_data.append({
                     'symbol': symbol,
+                    'name': asset['name'],
                     'current_price': current_price,
-                    'daily_change': hist['Close'].pct_change().iloc[-1] * 100 if len(hist) > 1 else 0
+                    'net_quantity': net_quantity,
+                    'avg_cost': avg_cost,
+                    'current_value': current_value,
+                    'pl_value': pl_value,
+                    'pl_percent': pl_percent,
+                    'daily_change': daily_change,
+                    'weekly_change': weekly_change,
+                    'monthly_change': monthly_change,
+                    'ytd_change': ytd_change
                 })
         except Exception as e:
             print(f"Errore nell'aggiornamento dei prezzi per {symbol}: {e}")
+    
+    print(f"Dati aggiornati per il portfolio {portfolio_id}:")
+    for data in updated_data:
+        print(f"Symbol: {data['symbol']}, Prezzo: {data['current_price']}, Quantità: {data['net_quantity']}, P/L: {data['pl_value']}")
     
     return jsonify({'success': True, 'data': updated_data})
 
