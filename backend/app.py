@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
 import requests
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import yfinance as yf
 app = Flask(__name__)
@@ -344,6 +344,160 @@ def delete_transaction(portfolio_id, symbol):
             return jsonify({'success': True})
     
     return jsonify({'error': 'Transazione non trovata'}), 404
+
+
+    # Recupera i prezzi storici     
+@app.route('/portfolios/<portfolio_id>/update_prices', methods=['POST'])
+def update_prices(portfolio_id):
+    if 'username' not in session:
+        return jsonify({'error': 'Non autorizzato'}), 401
+    
+    username = session['username']
+    if portfolio_id not in users[username]['portfolios']:
+        return jsonify({'error': 'Portfolio non trovato'}), 404
+    
+    portfolio = users[username]['portfolios'][portfolio_id]
+    updated_data = []
+    
+    # Recupera i prezzi storici per ogni strumento
+    for asset in portfolio['assets']:
+        symbol = asset['symbol']
+        try:
+            # Ottieni dati storici per gli ultimi 365 giorni
+            ticker = yf.Ticker(symbol)
+            hist = ticker.history(period="1y")
+            
+            # Aggiorna il prezzo corrente
+            if not hist.empty:
+                current_price = hist['Close'].iloc[-1]
+                asset['current_price'] = current_price
+                
+                # Memorizza i prezzi storici
+                if 'historical_prices' not in asset:
+                    asset['historical_prices'] = {}
+                
+                for date, row in hist.iterrows():
+                    date_str = date.strftime('%Y-%m-%d')
+                    asset['historical_prices'][date_str] = row['Close']
+                
+                updated_data.append({
+                    'symbol': symbol,
+                    'current_price': current_price,
+                    'daily_change': hist['Close'].pct_change().iloc[-1] * 100 if len(hist) > 1 else 0
+                })
+        except Exception as e:
+            print(f"Errore nell'aggiornamento dei prezzi per {symbol}: {e}")
+    
+    return jsonify({'success': True, 'data': updated_data})
+
+    # Rendimenti su diversi periodi
+@app.route('/portfolios/<portfolio_id>/performance', methods=['GET'])
+def get_performance(portfolio_id):
+    if 'username' not in session:
+        return jsonify({'error': 'Non autorizzato'}), 401
+    
+    username = session['username']
+    if portfolio_id not in users[username]['portfolios']:
+        return jsonify({'error': 'Portfolio non trovato'}), 404
+    
+    portfolio = users[username]['portfolios'][portfolio_id]
+    
+    period = request.args.get('period', 'all')
+    today = datetime.now()
+    
+    # Determina la data di inizio in base al periodo
+    if period == '1m':
+        start_date = (today - timedelta(days=30)).strftime('%Y-%m-%d')
+    elif period == '3m':
+        start_date = (today - timedelta(days=90)).strftime('%Y-%m-%d')
+    elif period == '6m':
+        start_date = (today - timedelta(days=180)).strftime('%Y-%m-%d')
+    elif period == 'ytd':
+        start_date = datetime(today.year, 1, 1).strftime('%Y-%m-%d')
+    elif period == '1y':
+        start_date = (today - timedelta(days=365)).strftime('%Y-%m-%d')
+    else:
+        # Trova la prima transazione in assoluto
+        start_date = today.strftime('%Y-%m-%d')
+        for asset in portfolio['assets']:
+            for transaction in asset['transactions']:
+                if transaction['date'] < start_date:
+                    start_date = transaction['date']
+    
+    # Calcola i valori del portafoglio all'inizio e alla fine del periodo
+    start_value = 0
+    end_value = 0
+    cash_flows = []  # Per calcolare TWR e MWR in seguito
+    
+    for asset in portfolio['assets']:
+        if 'historical_prices' not in asset:
+            continue
+        
+        # Determina le transazioni rilevanti e calcola la quantità posseduta all'inizio del periodo
+        net_quantity_at_start = 0
+        net_quantity_current = 0
+        
+        for transaction in asset['transactions']:
+            transaction_date = transaction['date']
+            quantity = transaction['quantity']
+            price = transaction['price']
+            
+            if transaction['type'] == 'buy':
+                if transaction_date < start_date:
+                    net_quantity_at_start += quantity
+                net_quantity_current += quantity
+                # Registra il flusso di cassa per TWR/MWR
+                cash_flows.append({
+                    'date': transaction_date,
+                    'amount': -quantity * price  # Negativo perché è un'uscita di cassa
+                })
+            else:  # sell
+                if transaction_date < start_date:
+                    net_quantity_at_start -= quantity
+                net_quantity_current -= quantity
+                # Registra il flusso di cassa per TWR/MWR
+                cash_flows.append({
+                    'date': transaction_date,
+                    'amount': quantity * price  # Positivo perché è un'entrata di cassa
+                })
+        
+        # Trova i prezzi all'inizio e alla fine del periodo
+        start_price = None
+        end_price = None
+        
+        # Trova il prezzo più vicino alla data di inizio
+        closest_start_date = None
+        for date_str, price in asset['historical_prices'].items():
+            if date_str >= start_date:
+                if closest_start_date is None or date_str < closest_start_date:
+                    closest_start_date = date_str
+                    start_price = price
+        
+        # Utilizza il prezzo corrente come prezzo finale
+        end_price = asset['current_price']
+        
+        if start_price and end_price:
+            start_value += net_quantity_at_start * start_price
+            end_value += net_quantity_current * end_price
+    
+    # Calcola il rendimento percentuale
+    if start_value > 0:
+        percent_return = ((end_value - start_value) / start_value) * 100
+    else:
+        percent_return = 0
+    
+    # In futuro qui potremmo aggiungere il calcolo di MWR e TWR
+    
+    return jsonify({
+        'period': period,
+        'start_date': start_date,
+        'end_date': today.strftime('%Y-%m-%d'),
+        'start_value': start_value,
+        'end_value': end_value,
+        'percent_return': percent_return
+    })    
+
+    
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001)  # Usa la porta 5001 invece della 5000

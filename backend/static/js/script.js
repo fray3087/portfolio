@@ -280,66 +280,162 @@ fetch(`/search_assets?q=${encodeURIComponent(query)}`)
     }
     
     // Funzione per aggiornare il sommario del portafoglio
-    function updatePortfolioSummary() {
-        // In un'applicazione reale, questi valori verrebbero calcolati in base ai dati effettivi
-        // Per ora, inseriamo valori di esempio
-        const totalValue = document.getElementById('totalValue');
-        const dailyChange = document.getElementById('dailyChange');
-        const dailyChangePercent = document.getElementById('dailyChangePercent');
-        const totalPerformance = document.getElementById('totalPerformance');
-        const totalPerformancePercent = document.getElementById('totalPerformancePercent');
-        
-        if (totalValue) {
-            // Placeholder per i valori - in produzione verrebbero calcolati dinamicamente
-            let calculatedTotalValue = 0;
-            
-            // Calcola il valore totale dalle transazioni (esempio semplificato)
+    // Funzione per aggiornare il sommario del portafoglio
+function updatePortfolioSummary() {
+    const portfolioId = window.location.pathname.split('/')[2];
+    const totalValue = document.getElementById('totalValue');
+    const dailyChange = document.getElementById('dailyChange');
+    const dailyChangePercent = document.getElementById('dailyChangePercent');
+    const totalPerformance = document.getElementById('totalPerformance');
+    const totalPerformancePercent = document.getElementById('totalPerformancePercent');
+    
+    if (!totalValue) return;
+    
+    // Primo step: calcolare il valore attuale del portafoglio
+    let currentTotalValue = 0;
+    let yesterdayTotalValue = 0;
+    let initialInvestment = 0;
+    
+    // Poi aggiorniamo i prezzi degli strumenti chiamando l'API
+    fetch(`/portfolios/${portfolioId}/update_prices`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Ora calcoliamo i valori con i dati aggiornati
             const assetCards = document.querySelectorAll('.asset-card');
             assetCards.forEach(card => {
-                const rows = card.querySelectorAll('table tbody tr');
-                let netQuantity = 0;
-                let latestPrice = 0;
+                const symbol = card.querySelector('.delete-asset-btn').dataset.symbol;
+                const currentPriceElement = card.querySelector('.current-price');
                 
-                rows.forEach(row => {
-                    const cells = row.querySelectorAll('td');
-                    const type = cells[1].textContent.includes('Acquisto') ? 'buy' : 'sell';
-                    const quantity = parseFloat(cells[2].textContent);
-                    const price = parseFloat(cells[3].textContent.replace('€', '').trim());
+                // Trova i dati aggiornati per questo strumento
+                const assetData = data.data.find(item => item.symbol === symbol);
+                if (assetData) {
+                    // Aggiorna il prezzo visualizzato
+                    const priceText = currentPriceElement.textContent;
+                    const currency = priceText.split(' ')[1];
+                    currentPriceElement.textContent = `Prezzo attuale: ${currency} ${assetData.current_price.toFixed(2)}`;
                     
-                    if (type === 'buy') {
-                        netQuantity += quantity;
-                    } else {
-                        netQuantity -= quantity;
-                    }
+                    // Calcola il valore delle posizioni
+                    const rows = card.querySelectorAll('table tbody tr');
+                    let netQuantity = 0;
+                    let investmentCost = 0;
                     
-                    // Salva il prezzo più recente (supponendo che le transazioni siano in ordine cronologico)
-                    latestPrice = price;
-                });
-                
-                // Calcola il valore di questo asset
-                const assetValue = netQuantity * latestPrice;
-                calculatedTotalValue += assetValue;
+                    rows.forEach(row => {
+                        const cells = row.querySelectorAll('td');
+                        const type = cells[1].textContent.includes('Acquisto') ? 'buy' : 'sell';
+                        const quantity = parseFloat(cells[2].textContent);
+                        const price = parseFloat(cells[3].textContent.replace('€', '').trim());
+                        const total = price * quantity;
+                        
+                        if (type === 'buy') {
+                            netQuantity += quantity;
+                            investmentCost += total;
+                        } else {
+                            netQuantity -= quantity;
+                            investmentCost -= total;
+                        }
+                    });
+                    
+                    // Calcola il valore attuale e di ieri
+                    const currentAssetValue = netQuantity * assetData.current_price;
+                    const yesterdayAssetValue = netQuantity * (assetData.current_price / (1 + assetData.daily_change / 100));
+                    
+                    currentTotalValue += currentAssetValue;
+                    yesterdayTotalValue += yesterdayAssetValue;
+                    initialInvestment += investmentCost;
+                }
             });
             
-            // Aggiorna i valori del sommario
-            totalValue.textContent = calculatedTotalValue.toFixed(2);
+            // Aggiorna i valori del sommario del portafoglio
+            totalValue.textContent = currentTotalValue.toFixed(2);
             
-            // Valori di esempio per gli altri campi
-            const randomDailyChange = (Math.random() * 2 - 1) * (calculatedTotalValue * 0.02); // ±2%
-            dailyChange.textContent = randomDailyChange.toFixed(2);
+            // Variazione giornaliera
+            const dailyChangeValue = currentTotalValue - yesterdayTotalValue;
+            dailyChange.textContent = dailyChangeValue.toFixed(2);
             
-            const dailyChangePercentValue = calculatedTotalValue > 0 ? 
-                (randomDailyChange / calculatedTotalValue) * 100 : 0;
+            const dailyChangePercentValue = yesterdayTotalValue > 0 ? 
+                (dailyChangeValue / yesterdayTotalValue) * 100 : 0;
             dailyChangePercent.textContent = dailyChangePercentValue.toFixed(2) + '%';
             dailyChangePercent.className = 'change ' + (dailyChangePercentValue >= 0 ? 'positive' : 'negative');
             
-            const randomTotalPerformance = calculatedTotalValue * 0.1; // Esempio: 10% di rendimento totale
-            totalPerformance.textContent = randomTotalPerformance.toFixed(2);
+            // Performance totale
+            const totalPerformanceValue = currentTotalValue - initialInvestment;
+            totalPerformance.textContent = totalPerformanceValue.toFixed(2);
             
-            const totalPerformancePercentValue = calculatedTotalValue > 0 ? 
-                (randomTotalPerformance / calculatedTotalValue) * 100 : 0;
+            const totalPerformancePercentValue = initialInvestment > 0 ? 
+                (totalPerformanceValue / initialInvestment) * 100 : 0;
             totalPerformancePercent.textContent = totalPerformancePercentValue.toFixed(2) + '%';
             totalPerformancePercent.className = 'change ' + (totalPerformancePercentValue >= 0 ? 'positive' : 'negative');
+            
+            // Aggiorna i rendimenti su diversi periodi
+            updatePerformancePeriods(portfolioId);
         }
+    })
+    .catch(error => {
+        console.error('Errore nell\'aggiornamento dei valori del portafoglio:', error);
+    });
+}
+        // Calcolo rendimenti su diversi periodi
+    function calculatePerformanceForPeriod(portfolioId, period) {
+        return fetch(`/portfolios/${portfolioId}/performance?period=${period}`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            return data;
+        });
     }
+
 });
+// Funzione per calcolare i rendimenti per un periodo specifico
+function calculatePerformanceForPeriod(portfolioId, period) {
+    return fetch(`/portfolios/${portfolioId}/performance?period=${period}`, {
+        method: 'GET',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        return data;
+    });
+}
+
+// Funzione per aggiornare i rendimenti su diversi periodi
+function updatePerformancePeriods(portfolioId) {
+    const periods = ['1m', '3m', '6m', 'ytd', '1y'];
+    const cardIds = [
+        'month-performance', 
+        'three-month-performance', 
+        'six-month-performance', 
+        'ytd-performance', 
+        'one-year-performance'
+    ];
+    
+    // Aggiorna ogni periodo
+    periods.forEach((period, index) => {
+        calculatePerformanceForPeriod(portfolioId, period)
+        .then(data => {
+            const card = document.getElementById(cardIds[index]);
+            if (card) {
+                const valueElement = card.querySelector('.value');
+                if (valueElement) {
+                    const percentReturn = data.percent_return.toFixed(2);
+                    valueElement.textContent = `${percentReturn}%`;
+                    valueElement.className = 'value ' + (percentReturn >= 0 ? 'positive' : 'negative');
+                }
+            }
+        })
+        .catch(error => {
+            console.error(`Errore nel calcolo del rendimento per il periodo ${period}:`, error);
+        });
+    });
+}
