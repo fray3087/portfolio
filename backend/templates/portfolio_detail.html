@@ -116,7 +116,8 @@
                 Prezzo attuale: {{ asset.currency|default('USD') }} <span class="price-value">{{ asset.current_price|default(0)|round(2) }}</span>
             </p>
                 
-            <!-- Aggiungiamo qui i dettagli della performance -->
+<!-- Sostituire il div asset-performance esistente con questo codice aggiornato -->
+
 <div class="asset-performance" id="performance-{{ asset.symbol|replace('.', '_') }}">
     <div class="asset-performance-grid">
         <div class="asset-performance-item">
@@ -135,6 +136,10 @@
             <span class="label">P/L</span>
             <span class="value pl-value">€ 0,00 (0,00%)</span>
         </div>
+    </div>
+    
+    <h5 class="performance-title">Variazioni</h5>
+    <div class="asset-performance-grid">
         <div class="asset-performance-item">
             <span class="label">Oggi</span>
             <span class="value daily-change">0,00%</span>
@@ -148,8 +153,24 @@
             <span class="value monthly-change">0,00%</span>
         </div>
         <div class="asset-performance-item">
-            <span class="label">Anno in corso</span>
+            <span class="label">YTD</span>
             <span class="value ytd-change">0,00%</span>
+        </div>
+        <div class="asset-performance-item">
+            <span class="label">3 Anni</span>
+            <span class="value three-year-change">N/A</span>
+        </div>
+        <div class="asset-performance-item">
+            <span class="label">5 Anni</span>
+            <span class="value five-year-change">N/A</span>
+        </div>
+        <div class="asset-performance-item">
+            <span class="label">10 Anni</span>
+            <span class="value ten-year-change">N/A</span>
+        </div>
+        <div class="asset-performance-item">
+            <span class="label">Dall'inizio</span>
+            <span class="value since-inception-change">0,00%</span>
         </div>
     </div>
 </div>

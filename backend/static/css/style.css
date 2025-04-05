@@ -807,6 +807,7 @@ table tr:hover {
 .performance-card .value.negative {
     color: #ef4444;
 }
+
 /* Stili per la performance degli asset */
 .asset-summary {
     margin-bottom: 20px;
@@ -820,10 +821,21 @@ table tr:hover {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
+/* Nuovi stili per l'asset performance grid */
 .asset-performance-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-    gap: 12px;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 10px;
+}
+
+.performance-title {
+    margin-top: 15px;
+    margin-bottom: 10px;
+    font-size: 14px;
+    color: var(--text-light);
+    font-weight: 600;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 5px;
 }
 
 .asset-performance-item {
@@ -831,6 +843,12 @@ table tr:hover {
     text-align: center;
     border-radius: 6px;
     background-color: #f8fafc;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.asset-performance-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .asset-performance-item .label {
@@ -853,4 +871,24 @@ table tr:hover {
 
 .asset-performance-item .value.negative {
     color: #ef4444;
+}
+
+/* Per rendere responsivo il layout su schermi più piccoli */
+@media (max-width: 768px) {
+    .asset-performance-grid {
+        grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+        gap: 8px;
+    }
+    
+    .asset-performance-item {
+        padding: 6px;
+    }
+    
+    .asset-performance-item .label {
+        font-size: 11px;
+    }
+    
+    .asset-performance-item .value {
+        font-size: 13px;
+    }
 }

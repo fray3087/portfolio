@@ -4,6 +4,8 @@ import json
 from datetime import datetime, timedelta
 import os
 import yfinance as yf
+import pandas as pd
+
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'  # Necessario per utilizzare le sessioni e i flash messages
 
@@ -305,7 +307,7 @@ def delete_asset(portfolio_id, symbol):
     
     return jsonify({'success': True})
 
-    # Elimina una transazione
+# Elimina una transazione
 @app.route('/portfolios/<portfolio_id>/assets/<symbol>/transactions/delete', methods=['POST'])
 def delete_transaction(portfolio_id, symbol):
     if 'username' not in session:
@@ -345,8 +347,45 @@ def delete_transaction(portfolio_id, symbol):
     
     return jsonify({'error': 'Transazione non trovata'}), 404
 
+# Funzione helper per trovare il prezzo più vicino a una data specifica - CORRETTA
+def find_closest_price(history_df, target_date):
+    # Trova l'indice della data più vicina alla data target
+    if history_df.empty:
+        return 0
+        
+    # Assicura che target_date sia timezone-naive
+    if isinstance(target_date, datetime):
+        target_date = target_date.replace(tzinfo=None)
+    
+    # Converti l'indice in una lista di date senza timezone info
+    dates = []
+    for idx_date in history_df.index:
+        # Rimuovi l'informazione timezone se presente
+        if hasattr(idx_date, 'tzinfo') and idx_date.tzinfo is not None:
+            dates.append(idx_date.replace(tzinfo=None))
+        else:
+            dates.append(idx_date)
+    
+    # Converti target_date in Timestamp senza timezone
+    target_timestamp = pd.Timestamp(target_date).replace(tzinfo=None)
+    
+    # Trova la data più vicina
+    closest_date_idx = None
+    min_diff = None
+    
+    for i, date in enumerate(dates):
+        diff = abs((date - target_timestamp).total_seconds())
+        if min_diff is None or diff < min_diff:
+            min_diff = diff
+            closest_date_idx = i
+    
+    # Se non troviamo una data vicina, usiamo la prima disponibile
+    if closest_date_idx is None:
+        return history_df['Close'].iloc[0] if len(history_df) > 0 else 0
+    
+    return history_df['Close'].iloc[closest_date_idx]
 
-    # Recupera i prezzi storici     
+# Recupera i prezzi storici     
 @app.route('/portfolios/<portfolio_id>/update_prices', methods=['POST'])
 def update_prices(portfolio_id):
     if 'username' not in session:
@@ -358,14 +397,25 @@ def update_prices(portfolio_id):
     
     portfolio = users[username]['portfolios'][portfolio_id]
     updated_data = []
+    print(f"Ricevuta richiesta update_prices per portfolio {portfolio_id}")
+    print(f"Portfolio contiene {len(portfolio['assets'])} asset")
+    
+    # Data corrente per calcoli YTD e altre metriche temporali
+    current_date = datetime.now()
+    ytd_start_date = datetime(current_date.year, 1, 1)  # 1° gennaio dell'anno corrente
+    three_years_ago = current_date - timedelta(days=365*3)
+    five_years_ago = current_date - timedelta(days=365*5)
+    ten_years_ago = current_date - timedelta(days=365*10)
     
     # Recupera i prezzi storici per ogni strumento
     for asset in portfolio['assets']:
         symbol = asset['symbol']
+        print(f"Elaborazione asset {symbol}...")
         try:
-            # Ottieni dati storici per gli ultimi 365 giorni
+            # Ottieni dati storici per il periodo massimo disponibile
             ticker = yf.Ticker(symbol)
-            hist = ticker.history(period="1y")
+            hist = ticker.history(period="max")
+            print(f"Ottenuti {len(hist)} punti dati storici per {symbol}")
             
             # Aggiorna il prezzo corrente
             if not hist.empty:
@@ -380,11 +430,38 @@ def update_prices(portfolio_id):
                     date_str = date.strftime('%Y-%m-%d')
                     asset['historical_prices'][date_str] = row['Close']
                 
-                # Calcola la performance dell'asset
-                daily_change = hist['Close'].pct_change().iloc[-1] * 100 if len(hist) > 1 else 0
-                weekly_change = hist['Close'].pct_change(5).iloc[-1] * 100 if len(hist) > 5 else 0
-                monthly_change = hist['Close'].pct_change(20).iloc[-1] * 100 if len(hist) > 20 else 0
-                ytd_change = (current_price / hist['Close'].iloc[0] - 1) * 100 if not hist.empty else 0
+                try:
+                    # Trova il prezzo più vicino per diverse date di riferimento
+                    ytd_price = find_closest_price(hist, ytd_start_date)
+                    three_year_price = find_closest_price(hist, three_years_ago)
+                    five_year_price = find_closest_price(hist, five_years_ago)
+                    ten_year_price = find_closest_price(hist, ten_years_ago)
+                    first_price = hist['Close'].iloc[0] if not hist.empty else current_price
+                    
+                    # Calcola le variazioni percentuali per diversi periodi
+                    daily_change = hist['Close'].pct_change().iloc[-1] * 100 if len(hist) > 1 else 0
+                    weekly_change = hist['Close'].pct_change(5).iloc[-1] * 100 if len(hist) > 5 else 0
+                    monthly_change = hist['Close'].pct_change(20).iloc[-1] * 100 if len(hist) > 20 else 0
+                    
+                    # Calcola correttamente il YTD (Year To Date)
+                    ytd_change = ((current_price / ytd_price) - 1) * 100 if ytd_price > 0 else 0
+                    
+                    # Nuove metriche temporali
+                    three_year_change = ((current_price / three_year_price) - 1) * 100 if three_year_price > 0 else None
+                    five_year_change = ((current_price / five_year_price) - 1) * 100 if five_year_price > 0 else None
+                    ten_year_change = ((current_price / ten_year_price) - 1) * 100 if ten_year_price > 0 else None
+                    since_inception_change = ((current_price / first_price) - 1) * 100 if first_price > 0 else 0
+                except Exception as e:
+                    print(f"Errore nel calcolo delle metriche di performance per {symbol}: {e}")
+                    # Valori predefiniti in caso di errore
+                    daily_change = 0
+                    weekly_change = 0
+                    monthly_change = 0
+                    ytd_change = 0
+                    three_year_change = None
+                    five_year_change = None
+                    ten_year_change = None
+                    since_inception_change = 0
                 
                 # Calcola il costo medio e il profitto/perdita
                 buy_quantity = 0
@@ -423,7 +500,11 @@ def update_prices(portfolio_id):
                     'daily_change': daily_change,
                     'weekly_change': weekly_change,
                     'monthly_change': monthly_change,
-                    'ytd_change': ytd_change
+                    'ytd_change': ytd_change,
+                    'three_year_change': three_year_change,
+                    'five_year_change': five_year_change,
+                    'ten_year_change': ten_year_change,
+                    'since_inception_change': since_inception_change
                 })
         except Exception as e:
             print(f"Errore nell'aggiornamento dei prezzi per {symbol}: {e}")
@@ -434,7 +515,7 @@ def update_prices(portfolio_id):
     
     return jsonify({'success': True, 'data': updated_data})
 
-    # Rendimenti su diversi periodi
+# Rendimenti su diversi periodi
 @app.route('/portfolios/<portfolio_id>/performance', methods=['GET'])
 def get_performance(portfolio_id):
     if 'username' not in session:
@@ -540,8 +621,6 @@ def get_performance(portfolio_id):
         'end_value': end_value,
         'percent_return': percent_return
     })    
-
-    
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001)  # Usa la porta 5001 invece della 5000

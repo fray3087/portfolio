@@ -55,10 +55,8 @@ document.addEventListener('DOMContentLoaded', function() {
         deletePortfolioBtns.forEach(btn => {
             btn.addEventListener('click', function(e) {
                 e.preventDefault();
-                console.log('Pulsante elimina portafoglio cliccato');
                 const portfolioId = this.dataset.portfolioId;
-                console.log('Portfolio ID:' , portfolioId);
-
+                
                 if (confirm('Sei sicuro di voler eliminare questo portafoglio? Questa azione non può essere annullata.')) {
                     fetch(`/portfolios/${portfolioId}/delete`, {
                         method: 'POST',
@@ -69,7 +67,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     .then(response => response.json())
                     .then(data => {
                         if (data.success) {
-                            // Rimuovi la card del portafoglio dalla pagina o ricarica la pagina
                             window.location.reload();
                         } else {
                             alert(data.error || 'Errore durante l\'eliminazione del portafoglio');
@@ -103,7 +100,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     .then(response => response.json())
                     .then(data => {
                         if (data.success) {
-                            // Rimuovi la card dello strumento dalla pagina o ricarica la pagina
                             window.location.reload();
                         } else {
                             alert(data.error || 'Errore durante l\'eliminazione dello strumento');
@@ -279,11 +275,61 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
+// Funzione helper per aggiornare un singolo elemento di performance
+function updatePerformanceItem(parentElement, selector, value, allowNull = false) {
+    const element = parentElement.querySelector(selector);
+    if (!element) return;
+    
+    if (value === null && allowNull) {
+        element.textContent = 'N/A';
+        element.className = 'value ' + selector.substring(1);
+        return;
+    }
+    
+    element.textContent = `${parseFloat(value).toFixed(2)}%`;
+    element.className = `value ${selector.substring(1)} ${parseFloat(value) >= 0 ? 'positive' : 'negative'}`;
+}
 
-// Funzione per aggiornare il sommario del portafoglio
+// Funzione per aggiornare i dati di performance di un asset
+function updateAssetPerformance(element, data) {
+    if (!element) return;
+    
+    // Aggiorna la quantità
+    const netQuantity = element.querySelector('.net-quantity');
+    if (netQuantity) netQuantity.textContent = parseFloat(data.net_quantity).toFixed(2);
+    
+    // Aggiorna il costo medio
+    const avgCost = element.querySelector('.avg-cost');
+    if (avgCost) avgCost.textContent = `€ ${parseFloat(data.avg_cost).toFixed(2)}`;
+    
+    // Aggiorna il valore attuale
+    const currentValue = element.querySelector('.current-value');
+    if (currentValue) currentValue.textContent = `€ ${parseFloat(data.current_value).toFixed(2)}`;
+    
+    // Aggiorna il profitto/perdita
+    const plValue = element.querySelector('.pl-value');
+    if (plValue) {
+        plValue.textContent = `€ ${parseFloat(data.pl_value).toFixed(2)} (${parseFloat(data.pl_percent).toFixed(2)}%)`;
+        plValue.className = `value pl-value ${data.pl_value >= 0 ? 'positive' : 'negative'}`;
+    }
+    
+    // Aggiorna le variazioni
+    updatePerformanceItem(element, '.daily-change', data.daily_change);
+    updatePerformanceItem(element, '.weekly-change', data.weekly_change);
+    updatePerformanceItem(element, '.monthly-change', data.monthly_change);
+    updatePerformanceItem(element, '.ytd-change', data.ytd_change);
+    updatePerformanceItem(element, '.three-year-change', data.three_year_change, true);
+    updatePerformanceItem(element, '.five-year-change', data.five_year_change, true);
+    updatePerformanceItem(element, '.ten-year-change', data.ten_year_change, true);
+    updatePerformanceItem(element, '.since-inception-change', data.since_inception_change);
+}
+
+// Funzione per aggiornare il sommario del portafoglio e tutti i dati di performance
 function updatePortfolioSummary() {
     console.log("Esecuzione updatePortfolioSummary iniziata");
     const portfolioId = window.location.pathname.split('/')[2];
+    
+    // Elementi del sommario del portafoglio
     const totalValue = document.getElementById('totalValue');
     const dailyChange = document.getElementById('dailyChange');
     const dailyChangePercent = document.getElementById('dailyChangePercent');
@@ -295,12 +341,12 @@ function updatePortfolioSummary() {
         return;
     }
     
-    // Primo step: calcolare il valore attuale del portafoglio
+    // Variabili per il calcolo del totale
     let currentTotalValue = 0;
     let yesterdayTotalValue = 0;
     let initialInvestment = 0;
     
-    // Poi aggiorniamo i prezzi degli strumenti chiamando l'API
+    // Richiesta API per aggiornare i prezzi
     console.log(`Richiesta API per portfolio ${portfolioId}`);
     fetch(`/portfolios/${portfolioId}/update_prices`, {
         method: 'POST',
@@ -311,207 +357,88 @@ function updatePortfolioSummary() {
     .then(response => response.json())
     .then(data => {
         console.log("Risposta API ricevuta:", data);
-        if (data.success) {
-            console.log("Dati degli asset:", data.data);
+        
+        if (!data.success) {
+            console.error("API ha restituito un errore:", data.error || "Errore sconosciuto");
+            return;
+        }
+        
+        if (!data.data || !Array.isArray(data.data) || data.data.length === 0) {
+            console.warn("Nessun dato ricevuto dall'API");
+            return;
+        }
+        
+        console.log("Dati degli asset:", data.data);
+        
+        // Aggiorna i dati per ogni asset
+        const assetCards = document.querySelectorAll('.asset-card');
+        assetCards.forEach(card => {
+            const deleteBtn = card.querySelector('.delete-asset-btn');
+            if (!deleteBtn) return;
             
+            const symbol = deleteBtn.dataset.symbol;
+            const asset = data.data.find(a => a.symbol === symbol);
             
-            // Ora calcoliamo i valori con i dati aggiornati
-            const assetCards = document.querySelectorAll('.asset-card');
-            assetCards.forEach(card => {
-                const symbol = card.querySelector('.delete-asset-btn').dataset.symbol;
-                const currentPriceElement = card.querySelector('.current-price .price-value');
-                
-                // Trova i dati aggiornati per questo strumento
-                const assetData = data.data.find(item => item.symbol === symbol);
-                if (assetData) {
-                    // Aggiorna il prezzo visualizzato
-                    if (currentPriceElement) {
-                        currentPriceElement.textContent = assetData.current_price.toFixed(2);
-                    } else {
-                        // Fallback per il formato vecchio
-                        const oldPriceElement = card.querySelector('.current-price');
-                        if (oldPriceElement) {
-                            const priceText = oldPriceElement.textContent;
-                            const currency = priceText.split(' ')[1];
-                            oldPriceElement.textContent = `Prezzo attuale: ${currency} ${assetData.current_price.toFixed(2)}`;
-                        }
-                    }
-                    
-                    // Aggiorna i dettagli di performance dell'asset
-// Modifica la funzione che aggiorna i valori di performance
-// Sanitizza il simbolo per l'uso come selettore
-const safeSymbol = symbol.replace(/\./g, '_');
-const performanceElement = card.querySelector(`#performance-${safeSymbol}`);
-if (performanceElement) {
-    console.log(`Elemento performance trovato per ${symbol}:`, performanceElement);
-    
-    // Quantità
-    const netQuantityElement = performanceElement.querySelector('.net-quantity');
-    if (netQuantityElement) {
-        console.log(`Elemento net-quantity trovato per ${symbol}:`, netQuantityElement);
-        netQuantityElement.textContent = assetData.net_quantity.toFixed(2);
-    } else {
-        console.log(`Elemento net-quantity NON trovato per ${symbol}`);
-    }
-    
-    // Costo medio
-    const avgCostElement = performanceElement.querySelector('.avg-cost');
-    if (avgCostElement) {
-        console.log(`Elemento avg-cost trovato per ${symbol}:`, avgCostElement);
-        avgCostElement.textContent = `€ ${assetData.avg_cost.toFixed(2)}`;
-    } else {
-        console.log(`Elemento avg-cost NON trovato per ${symbol}`);
-    }
-    
-    // Valore attuale
-    const currentValueElement = performanceElement.querySelector('.current-value');
-    if (currentValueElement) {
-        console.log(`Elemento current-value trovato per ${symbol}:`, currentValueElement);
-        currentValueElement.textContent = `€ ${assetData.current_value.toFixed(2)}`;
-    } else {
-        console.log(`Elemento current-value NON trovato per ${symbol}`);
-    }
-    
-    // P/L
-    const plValueElement = performanceElement.querySelector('.pl-value');
-    if (plValueElement) {
-        console.log(`Elemento pl-value trovato per ${symbol}:`, plValueElement);
-        plValueElement.textContent = `€ ${assetData.pl_value.toFixed(2)} (${assetData.pl_percent.toFixed(2)}%)`;
-        plValueElement.className = `value pl-value ${assetData.pl_value >= 0 ? 'positive' : 'negative'}`;
-    } else {
-        console.log(`Elemento pl-value NON trovato per ${symbol}`);
-    }
-    
-    // Variazione giornaliera
-    const dailyChangeElement = performanceElement.querySelector('.daily-change');
-    if (dailyChangeElement) {
-        console.log(`Elemento daily-change trovato per ${symbol}:`, dailyChangeElement);
-        dailyChangeElement.textContent = `${assetData.daily_change.toFixed(2)}%`;
-        dailyChangeElement.className = `value daily-change ${assetData.daily_change >= 0 ? 'positive' : 'negative'}`;
-    } else {
-        console.log(`Elemento daily-change NON trovato per ${symbol}`);
-    }
-    
-    // Variazione settimanale
-    const weeklyChangeElement = performanceElement.querySelector('.weekly-change');
-    if (weeklyChangeElement) {
-        console.log(`Elemento weekly-change trovato per ${symbol}:`, weeklyChangeElement);
-        weeklyChangeElement.textContent = `${assetData.weekly_change.toFixed(2)}%`;
-        weeklyChangeElement.className = `value weekly-change ${assetData.weekly_change >= 0 ? 'positive' : 'negative'}`;
-    } else {
-        console.log(`Elemento weekly-change NON trovato per ${symbol}`);
-    }
-    
-    // Variazione mensile
-    const monthlyChangeElement = performanceElement.querySelector('.monthly-change');
-    if (monthlyChangeElement) {
-        console.log(`Elemento monthly-change trovato per ${symbol}:`, monthlyChangeElement);
-        monthlyChangeElement.textContent = `${assetData.monthly_change.toFixed(2)}%`;
-        monthlyChangeElement.className = `value monthly-change ${assetData.monthly_change >= 0 ? 'positive' : 'negative'}`;
-    } else {
-        console.log(`Elemento monthly-change NON trovato per ${symbol}`);
-    }
-    
-    // Variazione YTD
-    const ytdChangeElement = performanceElement.querySelector('.ytd-change');
-    if (ytdChangeElement) {
-        console.log(`Elemento ytd-change trovato per ${symbol}:`, ytdChangeElement);
-        ytdChangeElement.textContent = `${assetData.ytd_change.toFixed(2)}%`;
-        ytdChangeElement.className = `value ytd-change ${assetData.ytd_change >= 0 ? 'positive' : 'negative'}`;
-    } else {
-        console.log(`Elemento ytd-change NON trovato per ${symbol}`);
-    }
-} else {
-    console.log(`Elemento performance NON trovato per ${symbol} (cercato #performance-${safeSymbol})`);
-}
-                    
-                    // Calcola il valore delle posizioni per il portafoglio totale
-                    const rows = card.querySelectorAll('table tbody tr');
-                    let netQuantity = 0;
-                    let investmentCost = 0;
-                    
-                    rows.forEach(row => {
-                        const cells = row.querySelectorAll('td');
-                        const type = cells[1].textContent.includes('Acquisto') ? 'buy' : 'sell';
-                        const quantity = parseFloat(cells[2].textContent);
-                        const price = parseFloat(cells[3].textContent.replace('€', '').trim());
-                        const total = price * quantity;
-                        
-                        if (type === 'buy') {
-                            netQuantity += quantity;
-                            investmentCost += total;
-                        } else {
-                            netQuantity -= quantity;
-                            investmentCost -= total;
-                        }
-                    });
-                    
-                    // Calcola il valore attuale e di ieri
-                    const currentAssetValue = netQuantity * assetData.current_price;
-                    const yesterdayAssetValue = netQuantity * (assetData.current_price / (1 + assetData.daily_change / 100));
-                    
-                    currentTotalValue += currentAssetValue;
-                    yesterdayTotalValue += yesterdayAssetValue;
-                    initialInvestment += investmentCost;
-                }
-            });
+            if (!asset) {
+                console.warn(`Dati non trovati per ${symbol}`);
+                return;
+            }
             
-            // Aggiorna i valori del sommario del portafoglio
-            totalValue.textContent = currentTotalValue.toFixed(2);
+            // Aggiorna il prezzo corrente
+            const priceElement = card.querySelector('.price-value');
+            if (priceElement) priceElement.textContent = parseFloat(asset.current_price).toFixed(2);
             
-            // Variazione giornaliera
-            const dailyChangeValue = currentTotalValue - yesterdayTotalValue;
-            dailyChange.textContent = dailyChangeValue.toFixed(2);
+            // Aggiorna le informazioni di performance
+            const safeSymbol = symbol.replace(/\./g, '_');
+            const performanceElement = card.querySelector(`#performance-${safeSymbol}`);
             
+            if (performanceElement) {
+                console.log(`Elemento performance trovato per ${symbol}`);
+                updateAssetPerformance(performanceElement, asset);
+            } else {
+                console.warn(`Elemento performance NON trovato per ${symbol} (cercato #performance-${safeSymbol})`);
+            }
+            
+            // Calcola il valore totale per il sommario
+            currentTotalValue += parseFloat(asset.current_value);
+            yesterdayTotalValue += parseFloat(asset.current_value) / (1 + parseFloat(asset.daily_change) / 100);
+            initialInvestment += parseFloat(asset.avg_cost) * parseFloat(asset.net_quantity);
+        });
+        
+        // Aggiorna il sommario del portafoglio
+        totalValue.textContent = currentTotalValue.toFixed(2);
+        
+        // Calcola la variazione giornaliera
+        const dailyChangeValue = currentTotalValue - yesterdayTotalValue;
+        if (dailyChange) dailyChange.textContent = dailyChangeValue.toFixed(2);
+        
+        if (dailyChangePercent) {
             const dailyChangePercentValue = yesterdayTotalValue > 0 ? 
                 (dailyChangeValue / yesterdayTotalValue) * 100 : 0;
             dailyChangePercent.textContent = dailyChangePercentValue.toFixed(2) + '%';
             dailyChangePercent.className = 'change ' + (dailyChangePercentValue >= 0 ? 'positive' : 'negative');
-            
-            // Performance totale
-            const totalPerformanceValue = currentTotalValue - initialInvestment;
-            totalPerformance.textContent = totalPerformanceValue.toFixed(2);
-            
-            const totalPerformancePercentValue = initialInvestment > 0 ? 
-                (totalPerformanceValue / initialInvestment) * 100 : 0;
-            totalPerformancePercent.textContent = totalPerformancePercentValue.toFixed(2) + '%';
-            totalPerformancePercent.className = 'change ' + (totalPerformancePercentValue >= 0 ? 'positive' : 'negative');
-            
-            // Aggiorna i rendimenti su diversi periodi
-            if (typeof updatePerformancePeriods === 'function') {
-                updatePerformancePeriods(portfolioId);
-            }
         }
+        
+        // Calcola la performance totale
+        const totalPerfValue = currentTotalValue - initialInvestment;
+        if (totalPerformance) totalPerformance.textContent = totalPerfValue.toFixed(2);
+        
+        if (totalPerformancePercent) {
+            const totalPerfPercentValue = initialInvestment > 0 ? 
+                (totalPerfValue / initialInvestment) * 100 : 0;
+            totalPerformancePercent.textContent = totalPerfPercentValue.toFixed(2) + '%';
+            totalPerformancePercent.className = 'change ' + (totalPerfPercentValue >= 0 ? 'positive' : 'negative');
+        }
+        
+        // Aggiorna la performance per diversi periodi
+        updatePerformancePeriods(portfolioId);
     })
     .catch(error => {
         console.error('Errore nell\'aggiornamento dei valori del portafoglio:', error);
     });
 }
 
-// Funzione helper per aggiornare un valore di performance
-function updatePerformanceValue(parentElement, selector, value) {
-    const element = parentElement.querySelector(selector);
-    if (element) {
-        element.textContent = `${value.toFixed(2)}%`;
-        element.className = `value ${selector.substring(1)} ${value >= 0 ? 'positive' : 'negative'}`;
-    }
-}
-
-// Funzione per calcolare i rendimenti per un periodo specifico
-function calculatePerformanceForPeriod(portfolioId, period) {
-    return fetch(`/portfolios/${portfolioId}/performance?period=${period}`, {
-        method: 'GET',
-        headers: {
-            'Content-Type': 'application/json'
-        }
-    })
-    .then(response => response.json())
-    .then(data => {
-        return data;
-    });
-}
-
-// Funzione per aggiornare i rendimenti su diversi periodi
+// Funzione per aggiornare le performance su diversi periodi
 function updatePerformancePeriods(portfolioId) {
     const periods = ['1m', '3m', '6m', 'ytd', '1y'];
     const cardIds = [
@@ -522,22 +449,27 @@ function updatePerformancePeriods(portfolioId) {
         'one-year-performance'
     ];
     
-    // Aggiorna ogni periodo
     periods.forEach((period, index) => {
-        calculatePerformanceForPeriod(portfolioId, period)
-        .then(data => {
-            const card = document.getElementById(cardIds[index]);
-            if (card) {
-                const valueElement = card.querySelector('.value');
-                if (valueElement) {
-                    const percentReturn = data.percent_return.toFixed(2);
-                    valueElement.textContent = `${percentReturn}%`;
-                    valueElement.className = 'value ' + (percentReturn >= 0 ? 'positive' : 'negative');
-                }
+        fetch(`/portfolios/${portfolioId}/performance?period=${period}`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
             }
         })
+        .then(response => response.json())
+        .then(data => {
+            const card = document.getElementById(cardIds[index]);
+            if (!card) return;
+            
+            const valueElement = card.querySelector('.value');
+            if (!valueElement) return;
+            
+            const percentReturn = parseFloat(data.percent_return).toFixed(2);
+            valueElement.textContent = `${percentReturn}%`;
+            valueElement.className = 'value ' + (data.percent_return >= 0 ? 'positive' : 'negative');
+        })
         .catch(error => {
-            console.error(`Errore nel calcolo del rendimento per il periodo ${period}:`, error);
+            console.error(`Errore nel recupero dei dati di performance per ${period}:`, error);
         });
     });
 }
