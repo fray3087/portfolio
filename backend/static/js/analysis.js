@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let returnsDistributionChart = null;
     let correlationChart = null;
     let currentPeriod = '1m';
+    let cachedData = {}; 
     
     // Inizializza i grafici
     initCharts();
@@ -668,4 +669,87 @@ document.addEventListener('DOMContentLoaded', function() {
         
         return colors;
     }
+// Nel file analysis.js
+
+function loadChartData(period) {
+    // Mostra gli indicatori di caricamento
+    showLoadingSpinners();
+    
+    // Usa un'unica API consolidata
+    fetch(`/api/portfolios/${portfolioId}/analysis-data?period=${period}`)
+        .then(response => response.json())
+        .then(data => {
+            // Nascondi gli indicatori di caricamento
+            hideLoadingSpinners();
+            
+            // Aggiorna tutti i grafici con i dati ricevuti
+            updatePerformanceChart(data.performance);
+            updateMetrics(data.performance);
+            updateDrawdownChart(data.drawdown);
+            updateDrawdownMetrics(data.drawdown);
+            updateAllocationChart(data.allocation);
+            updateRiskReturnChart(data.riskReturn);
+            updateReturnsDistributionChart(data.returnsDistribution);
+            updateCorrelationChart(data.correlation);
+        })
+        .catch(error => {
+            console.error('Errore nel caricamento dei dati:', error);
+            hideLoadingSpinners();
+            showErrorMessage();
+        });
+}
+
+function showLoadingSpinners() {
+    // Aggiungi spinner a tutti i contenitori dei grafici
+    document.querySelectorAll('.chart-container').forEach(container => {
+        const spinner = document.createElement('div');
+        spinner.className = 'loading-spinner';
+        spinner.innerHTML = '<i class="fas fa-spinner fa-spin"></i><p>Caricamento dati...</p>';
+        container.appendChild(spinner);
+    });
+    
+    // Disabilita i pulsanti di periodo durante il caricamento
+    document.querySelectorAll('.period-btn').forEach(btn => {
+        btn.disabled = true;
+    });
+}
+
+function hideLoadingSpinners() {
+    // Rimuovi tutti gli spinner
+    document.querySelectorAll('.loading-spinner').forEach(spinner => {
+        spinner.remove();
+    });
+    
+    // Riabilita i pulsanti
+    document.querySelectorAll('.period-btn').forEach(btn => {
+        btn.disabled = false;
+    });
+}
+
+/**
+ * Precaricare i dati per i periodi più comuni
+ */
+function precacheData() {
+    const periodsToCache = ['1m', '3m', 'ytd'];
+    
+    // Carica in background i dati per i periodi più usati
+    periodsToCache.forEach(period => {
+        if (period !== currentPeriod) { // Non caricare quello già caricato
+            fetch(`/api/portfolios/${portfolioId}/analysis-data?period=${period}`)
+                .then(response => response.json())
+                .then(data => {
+                    cachedData[period] = data;
+                    console.log(`Dati precached per il periodo ${period}`);
+                })
+                .catch(error => {
+                    console.error(`Errore nel precache per ${period}:`, error);
+                });
+        }
+    });
+}
+
+// Avvia il precaching dopo il caricamento iniziale
+setTimeout(precacheData, 3000);
+
+// Questa è la parentesi di chiusura del document.addEventListener
 });
