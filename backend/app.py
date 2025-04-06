@@ -1,10 +1,45 @@
 import os
 import json
+import bcrypt
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
 import requests
 import yfinance as yf
 import pandas as pd
+
+def hash_password(password):
+    """Hash della password con bcrypt"""
+    # Converti la password in bytes e genera l'hash
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+
+def check_password(provided_password, stored_hash):
+    """Verifica della password con debug dettagliato"""
+    try:
+        # Converti la password fornita in bytes
+        provided_password_bytes = provided_password.encode('utf-8')
+        
+        # Debug: stampa il tipo e il formato di stored_hash
+        print(f"Tipo stored_hash: {type(stored_hash)}")
+        print(f"Formato stored_hash: {stored_hash}")
+        
+        # Gestisci diversi formati di stored_hash
+        if isinstance(stored_hash, str):
+            try:
+                stored_hash = stored_hash.encode('utf-8')
+                print("Hash convertito da stringa a bytes")
+            except Exception as e:
+                print(f"Errore nella conversione: {e}")
+                return False
+        
+        # Verifica la password
+        result = bcrypt.checkpw(provided_password_bytes, stored_hash)
+        print(f"Risultato verifica password: {result}")
+        return result
+    except Exception as e:
+        print(f"Errore dettagliato nella verifica della password: {e}")
+        return False
+
+
 
 def load_users():
     """Carica gli utenti da un file JSON con gestione degli errori migliorata."""
@@ -15,27 +50,57 @@ def load_users():
         # Assicurati che la directory esista
         os.makedirs(base_dir, exist_ok=True)
         
-        # Se il file non esiste, crea un utente di default
+        # Se il file non esiste o non può essere caricato, crea un utente di default
         if not os.path.exists(file_path):
             default_users = {
                 'admin': {
-                    'password': 'password', 
+                    'password': hash_password('password'),  # Hash della password di default
                     'portfolios': {}
                 }
             }
             with open(file_path, 'w', encoding='utf-8') as f:
-                json.dump(default_users, f, indent=4, ensure_ascii=False)
+                json_users = {
+                    username: {
+                        'password': password.decode('utf-8'),
+                        'portfolios': user_data['portfolios']
+                    } for username, user_data in default_users.items()
+                }
+                json.dump(json_users, f, indent=4, ensure_ascii=False)
             return default_users
         
         # Leggi il file esistente con gestione degli errori
         with open(file_path, 'r', encoding='utf-8') as f:
             try:
-                users = json.load(f)
+                loaded_users = json.load(f)
+                
+                # Converti gli hash di nuovo in bytes o rigenera
+                users = {}
+                for username, user_data in loaded_users.items():
+                    try:
+                        # Prova a usare l'hash esistente
+                        password = user_data['password']
+                        if isinstance(password, str):
+                            password = password.encode('utf-8')
+                        
+                        # Verifica che l'hash sia valido
+                        bcrypt.checkpw(b'test', password)
+                        
+                        users[username] = {
+                            'password': password,
+                            'portfolios': user_data.get('portfolios', {})
+                        }
+                    except Exception:
+                        # Se l'hash non è valido, rigenera
+                        print(f"Hash non valido per {username}. Rigenerazione.")
+                        users[username] = {
+                            'password': hash_password('password'),
+                            'portfolios': user_data.get('portfolios', {})
+                        }
                 
                 # Assicurati che l'utente admin esista sempre
                 if 'admin' not in users:
                     users['admin'] = {
-                        'password': 'password', 
+                        'password': hash_password('password'),
                         'portfolios': {}
                     }
                 
@@ -44,56 +109,57 @@ def load_users():
                 print("Errore nel decodificare il file JSON. Creazione di un nuovo file.")
                 default_users = {
                     'admin': {
-                        'password': 'password', 
+                        'password': hash_password('password'),
                         'portfolios': {}
                     }
                 }
                 with open(file_path, 'w', encoding='utf-8') as f:
-                    json.dump(default_users, f, indent=4, ensure_ascii=False)
+                    json_users = {
+                        username: {
+                            'password': password.decode('utf-8'),
+                            'portfolios': user_data['portfolios']
+                        } for username, user_data in default_users.items()
+                    }
+                    json.dump(json_users, f, indent=4, ensure_ascii=False)
                 return default_users
     
-    except PermissionError:
-        print(f"Errore di permesso durante l'accesso a {file_path}")
-        return {
-            'admin': {
-                'password': 'password', 
-                'portfolios': {}
-            }
-        }
     except Exception as e:
         print(f"Errore inatteso nel caricamento degli utenti: {e}")
         return {
             'admin': {
-                'password': 'password', 
+                'password': hash_password('password'),
                 'portfolios': {}
             }
         }
 
 def save_users(users):
-    """Salva gli utenti su un file JSON con gestione avanzata degli errori."""
+    """Salva gli utenti su un file JSON con gestione avanzata degli errori"""
     try:
         base_dir = os.path.dirname(os.path.abspath(__file__))
         file_path = os.path.join(base_dir, 'users.json')
+        backup_path = file_path + '.bak'
         
         # Crea un backup prima di sovrascrivere
-        backup_path = file_path + '.bak'
         if os.path.exists(file_path):
             os.replace(file_path, backup_path)
         
+        # Converti gli hash in stringhe per il salvataggio JSON
+        json_users = {}
+        for username, user_data in users.items():
+            json_users[username] = {
+                'password': user_data['password'].decode('utf-8'),
+                'portfolios': user_data['portfolios']
+            }
+        
         # Salva il nuovo file
         with open(file_path, 'w', encoding='utf-8') as f:
-            json.dump(users, f, indent=4, ensure_ascii=False)
+            json.dump(json_users, f, indent=4, ensure_ascii=False)
         
         # Rimuovi il backup se il salvataggio ha successo
         if os.path.exists(backup_path):
             os.remove(backup_path)
         
         print("Dati utente salvati con successo")
-    except PermissionError:
-        print(f"Errore di permesso durante il salvataggio a {file_path}")
-        # Ripristina dal backup se disponibile
-        if os.path.exists(backup_path):
-            os.replace(backup_path, file_path)
     except Exception as e:
         print(f"Errore nel salvataggio degli utenti: {e}")
         # Tentativi di ripristino
@@ -110,23 +176,84 @@ users = load_users()
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'  # Necessario per utilizzare le sessioni e i flash messages
 
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        confirm_password = request.form['confirm_password']
+        
+        # Controlli base
+        if not username or not password:
+            flash('Username e password sono obbligatori', 'error')
+            return redirect(url_for('register'))
+        
+        if password != confirm_password:
+            flash('Le password non coincidono', 'error')
+            return redirect(url_for('register'))
+        
+        # Controllo se l'utente esiste già
+        if username in users:
+            flash('Username già esistente', 'error')
+            return redirect(url_for('register'))
+        
+        # Username deve essere alfanumerico
+        if not username.isalnum():
+            flash('Username deve contenere solo lettere e numeri', 'error')
+            return redirect(url_for('register'))
+        
+        # Password deve essere lunga almeno 6 caratteri
+        if len(password) < 6:
+            flash('La password deve essere lunga almeno 6 caratteri', 'error')
+            return redirect(url_for('register'))
+        
+        # Aggiungi nuovo utente con password hashata
+        users[username] = {
+            'password': hash_password(password),
+            'portfolios': {}
+        }
+        
+        # Salva gli utenti
+        save_users(users)
+        
+        flash('Registrazione avvenuta con successo', 'success')
+        return redirect(url_for('login'))
+    
+    return render_template('register.html')
+
 @app.route('/')
 def home():
     if 'username' in session:
         return redirect(url_for('portfolios'))
     return render_template('login.html')
 
-@app.route('/', methods=['POST'])
+@app.route('/', methods=['GET', 'POST'])
 def login():
-    username = request.form['username']
-    password = request.form['password']
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        
+        # Controlla se l'utente esiste
+        if username not in users:
+            flash('Utente non trovato', 'error')
+            return redirect(url_for('home'))
+        
+        # Debug: stampa le informazioni dell'utente
+        print(f"Utente trovato: {username}")
+        print(f"Stored password: {users[username]['password']}")
+        
+        # Verifica la password
+        stored_password = users[username]['password']
+        
+        if check_password(password, stored_password):
+            session['username'] = username
+            return redirect(url_for('portfolios'))
+        else:
+            flash('Credenziali errate. Riprova.', 'error')
+            return redirect(url_for('home'))
     
-    if username in users and users[username]['password'] == password:
-        session['username'] = username
-        return redirect(url_for('portfolios'))
-    else:
-        flash('Credenziali errate. Riprova.', 'error')
-        return redirect(url_for('home'))
+    return render_template('login.html')
+
 
 @app.route('/logout')
 def logout():
@@ -716,7 +843,7 @@ def get_performance(portfolio_id):
         'start_value': start_value,
         'end_value': end_value,
         'percent_return': percent_return
-    })    
+    })  
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001)  # Usa la porta 5001 invece della 5000

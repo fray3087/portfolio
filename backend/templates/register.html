@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - PortfolioTracker</title>
+    <title>Registrazione - PortfolioTracker</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
@@ -14,7 +14,7 @@
                 <div class="logo">PT</div>
             </div>
             <h1>Portfolio Tracker</h1>
-            <h2>Accedi al tuo portafoglio finanziario</h2>
+            <h2>Registrati</h2>
             
             {% with messages = get_flashed_messages(with_categories=true) %}
                 {% if messages %}
@@ -26,7 +26,7 @@
                 {% endif %}
             {% endwith %}
             
-            <form action="/" method="POST">
+            <form action="{{ url_for('register') }}" method="POST">
                 <div class="input-group">
                     <label for="username">
                         <i class="fas fa-user"></i> Nome Utente
@@ -39,13 +39,19 @@
                     </label>
                     <input type="password" id="password" name="password" required>
                 </div>
+                <div class="input-group">
+                    <label for="confirm_password">
+                        <i class="fas fa-lock"></i> Conferma Password
+                    </label>
+                    <input type="password" id="confirm_password" name="confirm_password" required>
+                </div>
                 <button type="submit" class="login-btn">
-                    <i class="fas fa-sign-in-alt"></i> Accedi
+                    <i class="fas fa-user-plus"></i> Registrati
                 </button>
             </form>
             
             <div class="register-link">
-                <p>Non hai un account? <a href="{{ url_for('register') }}">Registrati</a></p>
+                <p>Hai già un account? <a href="{{ url_for('login') }}">Accedi</a></p>
             </div>
         </div>
     </div>
