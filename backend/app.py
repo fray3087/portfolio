@@ -1,37 +1,114 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
-import requests
+import os
 import json
 from datetime import datetime, timedelta
-import os
+from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
+import requests
 import yfinance as yf
 import pandas as pd
 
+def load_users():
+    """Carica gli utenti da un file JSON con gestione degli errori migliorata."""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    file_path = os.path.join(base_dir, 'users.json')
+    
+    try:
+        # Assicurati che la directory esista
+        os.makedirs(base_dir, exist_ok=True)
+        
+        # Se il file non esiste, crea un utente di default
+        if not os.path.exists(file_path):
+            default_users = {
+                'admin': {
+                    'password': 'password', 
+                    'portfolios': {}
+                }
+            }
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(default_users, f, indent=4, ensure_ascii=False)
+            return default_users
+        
+        # Leggi il file esistente con gestione degli errori
+        with open(file_path, 'r', encoding='utf-8') as f:
+            try:
+                users = json.load(f)
+                
+                # Assicurati che l'utente admin esista sempre
+                if 'admin' not in users:
+                    users['admin'] = {
+                        'password': 'password', 
+                        'portfolios': {}
+                    }
+                
+                return users
+            except json.JSONDecodeError:
+                print("Errore nel decodificare il file JSON. Creazione di un nuovo file.")
+                default_users = {
+                    'admin': {
+                        'password': 'password', 
+                        'portfolios': {}
+                    }
+                }
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(default_users, f, indent=4, ensure_ascii=False)
+                return default_users
+    
+    except PermissionError:
+        print(f"Errore di permesso durante l'accesso a {file_path}")
+        return {
+            'admin': {
+                'password': 'password', 
+                'portfolios': {}
+            }
+        }
+    except Exception as e:
+        print(f"Errore inatteso nel caricamento degli utenti: {e}")
+        return {
+            'admin': {
+                'password': 'password', 
+                'portfolios': {}
+            }
+        }
+
+def save_users(users):
+    """Salva gli utenti su un file JSON con gestione avanzata degli errori."""
+    try:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        file_path = os.path.join(base_dir, 'users.json')
+        
+        # Crea un backup prima di sovrascrivere
+        backup_path = file_path + '.bak'
+        if os.path.exists(file_path):
+            os.replace(file_path, backup_path)
+        
+        # Salva il nuovo file
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(users, f, indent=4, ensure_ascii=False)
+        
+        # Rimuovi il backup se il salvataggio ha successo
+        if os.path.exists(backup_path):
+            os.remove(backup_path)
+        
+        print("Dati utente salvati con successo")
+    except PermissionError:
+        print(f"Errore di permesso durante il salvataggio a {file_path}")
+        # Ripristina dal backup se disponibile
+        if os.path.exists(backup_path):
+            os.replace(backup_path, file_path)
+    except Exception as e:
+        print(f"Errore nel salvataggio degli utenti: {e}")
+        # Tentativi di ripristino
+        if os.path.exists(backup_path):
+            try:
+                os.replace(backup_path, file_path)
+                print("Ripristinato il backup precedente")
+            except Exception:
+                print("Impossibile ripristinare il backup")
+
+# Carica gli utenti all'avvio dell'applicazione
+users = load_users()
+
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'  # Necessario per utilizzare le sessioni e i flash messages
-
-# Simula un database di utenti
-users = {
-    'admin': {'password': 'password', 'portfolios': {}}
-}
-
-# Struttura di esempio per un portfolio
-# users['admin']['portfolios'] = {
-#     'portfolio1': {
-#         'name': 'Portfolio Azionario',
-#         'description': 'Il mio portfolio di azioni',
-#         'created_at': '2023-01-01',
-#         'assets': [
-#             {
-#                 'symbol': 'AAPL',
-#                 'name': 'Apple Inc.',
-#                 'transactions': [
-#                     {'date': '2023-01-15', 'type': 'buy', 'quantity': 10, 'price': 150.00},
-#                     {'date': '2023-03-20', 'type': 'sell', 'quantity': 5, 'price': 170.00}
-#                 ]
-#             }
-#         ]
-#     }
-# }
 
 @app.route('/')
 def home():
@@ -83,6 +160,9 @@ def new_portfolio():
             'created_at': datetime.now().strftime('%Y-%m-%d'),
             'assets': []
         }
+        
+        # Salva immediatamente
+        save_users(users)
         
         flash('Portfolio creato con successo!', 'success')
         return redirect(url_for('portfolio_detail', portfolio_id=portfolio_id))
@@ -225,6 +305,9 @@ def add_asset(portfolio_id):
         'transactions': []
     })
     
+    # Salva immediatamente
+    save_users(users)
+    
     return jsonify({'success': True})
 
 @app.route('/portfolios/<portfolio_id>/assets/<symbol>/add_transaction', methods=['POST'])
@@ -263,6 +346,9 @@ def add_transaction(portfolio_id, symbol):
         'quantity': quantity,
         'price': price
     })
+
+    # Salva immediatamente
+    save_users(users)
     
     flash('Transazione aggiunta con successo', 'success')
     return redirect(url_for('portfolio_detail', portfolio_id=portfolio_id))
@@ -278,6 +364,9 @@ def delete_portfolio(portfolio_id):
     
     # Elimina il portafoglio
     del users[username]['portfolios'][portfolio_id]
+
+    # Salva immediatamente
+    save_users(users)
     
     return jsonify({'success': True})
 
@@ -304,10 +393,12 @@ def delete_asset(portfolio_id, symbol):
     
     # Elimina lo strumento
     portfolio['assets'].pop(asset_index)
+
+    # Salva immediatamente
+    save_users(users)
     
     return jsonify({'success': True})
 
-# Elimina una transazione
 @app.route('/portfolios/<portfolio_id>/assets/<symbol>/transactions/delete', methods=['POST'])
 def delete_transaction(portfolio_id, symbol):
     if 'username' not in session:
@@ -343,11 +434,15 @@ def delete_transaction(portfolio_id, symbol):
             abs(transaction['quantity'] - quantity) < 0.001 and 
             abs(transaction['price'] - price) < 0.001):
             asset['transactions'].pop(i)
+
+            # Salva immediatamente
+            save_users(users)
+
             return jsonify({'success': True})
     
     return jsonify({'error': 'Transazione non trovata'}), 404
 
-# Funzione helper per trovare il prezzo più vicino a una data specifica - CORRETTA
+# Funzione helper per trovare il prezzo più vicino a una data specifica
 def find_closest_price(history_df, target_date):
     # Trova l'indice della data più vicina alla data target
     if history_df.empty:
@@ -385,7 +480,6 @@ def find_closest_price(history_df, target_date):
     
     return history_df['Close'].iloc[closest_date_idx]
 
-# Recupera i prezzi storici     
 @app.route('/portfolios/<portfolio_id>/update_prices', methods=['POST'])
 def update_prices(portfolio_id):
     if 'username' not in session:
@@ -509,13 +603,15 @@ def update_prices(portfolio_id):
         except Exception as e:
             print(f"Errore nell'aggiornamento dei prezzi per {symbol}: {e}")
     
+    # Salva gli utenti dopo l'aggiornamento
+    save_users(users)
+    
     print(f"Dati aggiornati per il portfolio {portfolio_id}:")
     for data in updated_data:
         print(f"Symbol: {data['symbol']}, Prezzo: {data['current_price']}, Quantità: {data['net_quantity']}, P/L: {data['pl_value']}")
     
     return jsonify({'success': True, 'data': updated_data})
 
-# Rendimenti su diversi periodi
 @app.route('/portfolios/<portfolio_id>/performance', methods=['GET'])
 def get_performance(portfolio_id):
     if 'username' not in session:
