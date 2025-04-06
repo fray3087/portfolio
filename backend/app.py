@@ -6,6 +6,9 @@ from flask import Flask, render_template, request, redirect, url_for, flash, ses
 import requests
 import yfinance as yf
 import pandas as pd
+import numpy as np
+from scipy import stats
+
 
 def hash_password(password):
     """Hash della password con bcrypt"""
@@ -844,6 +847,492 @@ def get_performance(portfolio_id):
         'end_value': end_value,
         'percent_return': percent_return
     })  
+
+# Route per visualizzare la pagina di analisi del portafoglio
+@app.route('/portfolios/<portfolio_id>/analysis')
+def portfolio_analysis(portfolio_id):
+    if 'username' not in session:
+        return redirect(url_for('home'))
+    
+    username = session['username']
+    if portfolio_id not in users[username]['portfolios']:
+        flash('Portfolio non trovato', 'error')
+        return redirect(url_for('portfolios'))
+    
+    portfolio = users[username]['portfolios'][portfolio_id]
+    return render_template('portfolio_analysis.html', portfolio=portfolio, portfolio_id=portfolio_id)
+
+# API per ottenere i dati di performance del portafoglio
+@app.route('/api/portfolios/<portfolio_id>/performance-data')
+def get_performance_data(portfolio_id):
+    if 'username' not in session:
+        return jsonify({'error': 'Non autorizzato'}), 401
+    
+    username = session['username']
+    if portfolio_id not in users[username]['portfolios']:
+        return jsonify({'error': 'Portfolio non trovato'}), 404
+    
+    portfolio = users[username]['portfolios'][portfolio_id]
+    period = request.args.get('period', '1m')
+    
+    # Ottenere le date di inizio e fine
+    end_date = datetime.now()
+    
+    # Determinare la data di inizio in base al periodo
+    if period == '1m':
+        start_date = end_date - timedelta(days=30)
+    elif period == '3m':
+        start_date = end_date - timedelta(days=90)
+    elif period == '6m':
+        start_date = end_date - timedelta(days=180)
+    elif period == 'ytd':
+        start_date = datetime(end_date.year, 1, 1)
+    elif period == '1y':
+        start_date = end_date - timedelta(days=365)
+    else:  # 'all'
+        # Trova la data della prima transazione
+        start_date = end_date
+        for asset in portfolio['assets']:
+            for transaction in asset['transactions']:
+                transaction_date = datetime.strptime(transaction['date'], '%Y-%m-%d')
+                if transaction_date < start_date:
+                    start_date = transaction_date
+    
+    # Formatta le date per il confronto con stringhe
+    start_date_str = start_date.strftime('%Y-%m-%d')
+    end_date_str = end_date.strftime('%Y-%m-%d')
+    
+    # Costruisci una serie temporale di valori del portafoglio
+    dates = []
+    portfolio_values = []
+    current_date = start_date
+    
+    # Generiamo una lista di date dal periodo selezionato
+    date_list = []
+    while current_date <= end_date:
+        date_list.append(current_date.strftime('%Y-%m-%d'))
+        current_date += timedelta(days=1)
+    
+    # Calcola i valori per ogni data
+    for date_str in date_list:
+        daily_value = 0
+        
+        for asset in portfolio['assets']:
+            # Trova il prezzo più vicino alla data corrente
+            asset_price = 0
+            if 'historical_prices' in asset:
+                # Trova il prezzo più vicino alla data corrente
+                closest_date = None
+                min_date_diff = float('inf')
+                
+                for price_date, price in asset['historical_prices'].items():
+                    if price_date <= date_str:
+                        date_diff = abs((datetime.strptime(date_str, '%Y-%m-%d') - 
+                                        datetime.strptime(price_date, '%Y-%m-%d')).days)
+                        if date_diff < min_date_diff:
+                            min_date_diff = date_diff
+                            closest_date = price_date
+                            asset_price = price
+            
+            # Calcola la quantità posseduta alla data corrente
+            net_quantity = 0
+            for transaction in asset['transactions']:
+                if transaction['date'] <= date_str:
+                    if transaction['type'] == 'buy':
+                        net_quantity += transaction['quantity']
+                    else:  # sell
+                        net_quantity -= transaction['quantity']
+            
+            # Aggiungi il valore dell'asset al valore totale del portafoglio
+            daily_value += net_quantity * asset_price
+        
+        # Aggiungi la data e il valore alla serie temporale
+        dates.append(date_str)
+        portfolio_values.append(daily_value)
+    
+    # Calcola i rendimenti giornalieri percentuali
+    daily_returns = []
+    for i in range(1, len(portfolio_values)):
+        if portfolio_values[i-1] > 0:
+            daily_return = (portfolio_values[i] - portfolio_values[i-1]) / portfolio_values[i-1] * 100
+        else:
+            daily_return = 0
+        daily_returns.append(daily_return)
+    
+    # Calcola le metriche di performance
+    # Rendimento totale
+    total_return = ((portfolio_values[-1] / portfolio_values[0]) - 1) * 100 if portfolio_values[0] > 0 else 0
+    
+    # Rendimento annualizzato
+    days_held = (end_date - start_date).days
+    if days_held > 0 and portfolio_values[0] > 0:
+        annualized_return = (((portfolio_values[-1] / portfolio_values[0]) ** (365 / days_held)) - 1) * 100
+    else:
+        annualized_return = 0
+    
+    # Volatilità (deviazione standard annualizzata dei rendimenti giornalieri)
+    volatility = np.std(daily_returns) * np.sqrt(252) if daily_returns else 0
+    
+    # Indice di Sharpe (usando rendimento risk-free dello 0.5%)
+    risk_free_rate = 0.5  # 0.5% annuo
+    daily_risk_free = risk_free_rate / 252
+    sharpe_ratio = ((annualized_return - risk_free_rate) / volatility) if volatility > 0 else 0
+    
+    # Alpha e Beta (assumiamo un benchmark semplice per ora)
+    # In un'implementazione reale, dovresti caricare veri dati di benchmark
+    benchmark_values = [val * (1 + 0.0002) for val in range(len(portfolio_values))]
+    
+    return jsonify({
+        'dates': dates,
+        'portfolioValues': portfolio_values,
+        'benchmarkValues': benchmark_values,
+        'metrics': {
+            'totalReturn': total_return,
+            'annualizedReturn': annualized_return,
+            'alpha': 0.5,  # Placeholder per ora
+            'beta': 1.1,   # Placeholder per ora
+            'sharpeRatio': sharpe_ratio,
+            'volatility': volatility
+        }
+    })
+
+# API per ottenere i dati di drawdown
+@app.route('/api/portfolios/<portfolio_id>/drawdown-data')
+def get_drawdown_data(portfolio_id):
+    if 'username' not in session:
+        return jsonify({'error': 'Non autorizzato'}), 401
+    
+    username = session['username']
+    if portfolio_id not in users[username]['portfolios']:
+        return jsonify({'error': 'Portfolio non trovato'}), 404
+    
+    # Ottieni i dati di performance
+    period = request.args.get('period', '1m')
+    performance_data = get_performance_data(portfolio_id).json
+    
+    if 'error' in performance_data:
+        return jsonify(performance_data), 404
+    
+    # Calcola i drawdown
+    dates = performance_data['dates']
+    portfolio_values = performance_data['portfolioValues']
+    
+    # Calcola il drawdown (percentuale)
+    max_value = portfolio_values[0]
+    drawdown_values = []
+    drawdown_periods = []
+    current_drawdown = 0
+    current_drawdown_start = None
+    
+    for i, value in enumerate(portfolio_values):
+        if value > max_value:
+            max_value = value
+            # Se usciamo da un drawdown, registriamo il periodo
+            if current_drawdown_start is not None:
+                drawdown_periods.append({
+                    'start': current_drawdown_start,
+                    'end': i - 1,
+                    'duration': i - current_drawdown_start,
+                    'depth': current_drawdown
+                })
+                current_drawdown_start = None
+                current_drawdown = 0
+        
+        # Calcola il drawdown corrente
+        if max_value > 0:
+            dd = (value - max_value) / max_value * 100  # Sarà negativo
+        else:
+            dd = 0
+        
+        # Se iniziamo un nuovo drawdown
+        if dd < 0 and current_drawdown_start is None:
+            current_drawdown_start = i
+            current_drawdown = dd
+        # Se siamo in un drawdown e questo è più profondo
+        elif dd < 0 and dd < current_drawdown:
+            current_drawdown = dd
+        
+        drawdown_values.append(dd)
+    
+    # Completa l'ultimo periodo di drawdown se necessario
+    if current_drawdown_start is not None:
+        drawdown_periods.append({
+            'start': current_drawdown_start,
+            'end': len(portfolio_values) - 1,
+            'duration': len(portfolio_values) - current_drawdown_start,
+            'depth': current_drawdown
+        })
+    
+    # Calcola le metriche di drawdown
+    max_drawdown = min(drawdown_values) if drawdown_values else 0
+    
+    # Durata media dei drawdown
+    avg_drawdown_duration = sum([period['duration'] for period in drawdown_periods]) / len(drawdown_periods) if drawdown_periods else 0
+    
+    # Tempo medio di recupero (non implementato in questo esempio semplificato)
+    avg_recovery_time = 0  # Placeholder
+    
+    # Drawdown corrente
+    current_drawdown = drawdown_values[-1] if drawdown_values else 0
+    
+    return jsonify({
+        'dates': dates,
+        'drawdownValues': drawdown_values,
+        'metrics': {
+            'maxDrawdown': max_drawdown,
+            'avgDrawdownDuration': avg_drawdown_duration,
+            'avgRecoveryTime': avg_recovery_time,
+            'currentDrawdown': current_drawdown
+        }
+    })
+
+# API per ottenere i dati di allocazione degli asset
+@app.route('/api/portfolios/<portfolio_id>/allocation-data')
+def get_allocation_data(portfolio_id):
+    if 'username' not in session:
+        return jsonify({'error': 'Non autorizzato'}), 401
+    
+    username = session['username']
+    if portfolio_id not in users[username]['portfolios']:
+        return jsonify({'error': 'Portfolio non trovato'}), 404
+    
+    portfolio = users[username]['portfolios'][portfolio_id]
+    
+    # Calcola l'allocazione corrente
+    asset_names = []
+    allocations = []
+    total_value = 0
+    
+    # Prima, calcola il valore totale
+    for asset in portfolio['assets']:
+        # Calcola la quantità netta posseduta
+        net_quantity = 0
+        for transaction in asset['transactions']:
+            if transaction['type'] == 'buy':
+                net_quantity += transaction['quantity']
+            else:  # sell
+                net_quantity -= transaction['quantity']
+        
+        # Aggiungi il valore dell'asset al totale
+        asset_value = net_quantity * asset.get('current_price', 0)
+        total_value += asset_value
+    
+    # Poi, calcola la percentuale di allocazione per ogni asset
+    for asset in portfolio['assets']:
+        # Calcola la quantità netta posseduta
+        net_quantity = 0
+        for transaction in asset['transactions']:
+            if transaction['type'] == 'buy':
+                net_quantity += transaction['quantity']
+            else:  # sell
+                net_quantity -= transaction['quantity']
+        
+        # Calcola il valore e la percentuale
+        asset_value = net_quantity * asset.get('current_price', 0)
+        allocation_percentage = (asset_value / total_value * 100) if total_value > 0 else 0
+        
+        # Aggiungi all'elenco solo se l'allocazione è significativa
+        if allocation_percentage > 0.1:
+            asset_names.append(asset['name'])
+            allocations.append(allocation_percentage)
+    
+    return jsonify({
+        'assets': asset_names,
+        'allocations': allocations
+    })
+
+# API per ottenere i dati di rischio/rendimento
+@app.route('/api/portfolios/<portfolio_id>/risk-return-data')
+def get_risk_return_data(portfolio_id):
+    if 'username' not in session:
+        return jsonify({'error': 'Non autorizzato'}), 401
+    
+    username = session['username']
+    if portfolio_id not in users[username]['portfolios']:
+        return jsonify({'error': 'Portfolio non trovato'}), 404
+    
+    portfolio = users[username]['portfolios'][portfolio_id]
+    period = request.args.get('period', '1m')
+    
+    # Ottieni i dati di performance per calcolare il rischio e il rendimento del portafoglio
+    performance_data = get_performance_data(portfolio_id).json
+    
+    if 'error' in performance_data:
+        return jsonify(performance_data), 404
+    
+    portfolio_return = performance_data['metrics']['annualizedReturn']
+    portfolio_risk = performance_data['metrics']['volatility']
+    
+    # Calcola il rischio e il rendimento per ogni asset
+    asset_names = []
+    asset_returns = []
+    asset_risks = []
+    
+    for asset in portfolio['assets']:
+        # Per semplificare, utilizziamo le metriche dall'asset stesso
+        # In una implementazione reale, dovresti calcolare queste metriche con dati storici
+        asset_names.append(asset['name'])
+        
+        # Se esistono dati storici, calcola le metriche
+        if 'historical_prices' in asset and len(asset['historical_prices']) > 1:
+            # Converti i prezzi storici in un array
+            prices = []
+            dates = sorted(asset['historical_prices'].keys())
+            for date in dates:
+                prices.append(asset['historical_prices'][date])
+            
+            # Calcola i rendimenti giornalieri
+            daily_returns = []
+            for i in range(1, len(prices)):
+                if prices[i-1] > 0:
+                    daily_return = (prices[i] - prices[i-1]) / prices[i-1] * 100
+                else:
+                    daily_return = 0
+                daily_returns.append(daily_return)
+            
+            # Calcola il rendimento annualizzato
+            annualized_return = np.mean(daily_returns) * 252
+            
+            # Calcola la volatilità annualizzata
+            volatility = np.std(daily_returns) * np.sqrt(252) if len(daily_returns) > 1 else 0
+            
+            asset_returns.append(annualized_return)
+            asset_risks.append(volatility)
+        else:
+            # Se non ci sono dati storici, usa valori placeholder
+            asset_returns.append(5.0)  # 5% di rendimento annualizzato
+            asset_risks.append(10.0)   # 10% di volatilità annualizzata
+    
+    return jsonify({
+        'assets': asset_names,
+        'returns': asset_returns,
+        'risks': asset_risks,
+        'portfolioReturn': portfolio_return,
+        'portfolioRisk': portfolio_risk
+    })
+
+# API per ottenere la distribuzione dei rendimenti
+@app.route('/api/portfolios/<portfolio_id>/returns-distribution')
+def get_returns_distribution(portfolio_id):
+    if 'username' not in session:
+        return jsonify({'error': 'Non autorizzato'}), 401
+    
+    username = session['username']
+    if portfolio_id not in users[username]['portfolios']:
+        return jsonify({'error': 'Portfolio non trovato'}), 404
+    
+    period = request.args.get('period', '1m')
+    
+    # Ottieni i dati di performance
+    performance_data = get_performance_data(portfolio_id).json
+    
+    if 'error' in performance_data:
+        return jsonify(performance_data), 404
+    
+    # Calcola i rendimenti giornalieri dal valore del portafoglio
+    portfolio_values = performance_data['portfolioValues']
+    daily_returns = []
+    
+    for i in range(1, len(portfolio_values)):
+        if portfolio_values[i-1] > 0:
+            daily_return = (portfolio_values[i] - portfolio_values[i-1]) / portfolio_values[i-1] * 100
+        else:
+            daily_return = 0
+        daily_returns.append(daily_return)
+    
+    # Crea bins per l'istogramma
+    if daily_returns:
+        # Usa il metodo di Freedman-Diaconis per determinare la larghezza del bin
+        q75, q25 = np.percentile(daily_returns, [75, 25])
+        iqr = q75 - q25
+        bin_width = 2 * iqr * (len(daily_returns) ** (-1/3)) if iqr > 0 else 0.5
+        
+        # Limita il numero di bin tra 5 e 20
+        num_bins = min(max(int((max(daily_returns) - min(daily_returns)) / bin_width), 5), 20)
+        
+        # Crea bins e calcola le frequenze
+        hist, bin_edges = np.histogram(daily_returns, bins=num_bins)
+        
+        # Crea le etichette per i bins
+        bin_labels = []
+        for i in range(len(bin_edges) - 1):
+            bin_labels.append(f"{bin_edges[i]:.2f} a {bin_edges[i+1]:.2f}")
+        
+        return jsonify({
+            'bins': bin_labels,
+            'frequencies': hist.tolist()
+        })
+    else:
+        return jsonify({
+            'bins': [],
+            'frequencies': []
+        })
+
+# API per ottenere i dati di correlazione
+@app.route('/api/portfolios/<portfolio_id>/correlation-data')
+def get_correlation_data(portfolio_id):
+    if 'username' not in session:
+        return jsonify({'error': 'Non autorizzato'}), 401
+    
+    username = session['username']
+    if portfolio_id not in users[username]['portfolios']:
+        return jsonify({'error': 'Portfolio non trovato'}), 404
+    
+    portfolio = users[username]['portfolios'][portfolio_id]
+    
+    # Raccogli tutti i prezzi storici per calcolare le correlazioni
+    asset_names = []
+    asset_returns = []
+    
+    for asset in portfolio['assets']:
+        if 'historical_prices' in asset and len(asset['historical_prices']) > 1:
+            asset_names.append(asset['name'])
+            
+            # Converti i prezzi storici in rendimenti giornalieri
+            prices = []
+            dates = sorted(asset['historical_prices'].keys())
+            for date in dates:
+                prices.append(asset['historical_prices'][date])
+            
+            # Calcola i rendimenti giornalieri
+            returns = []
+            for i in range(1, len(prices)):
+                if prices[i-1] > 0:
+                    daily_return = (prices[i] - prices[i-1]) / prices[i-1]
+                else:
+                    daily_return = 0
+                returns.append(daily_return)
+            
+            asset_returns.append(returns)
+    
+    # Calcola la matrice di correlazione
+    correlation_matrix = []
+    if len(asset_returns) > 1:
+        # Assicurati che tutti gli array abbiano la stessa lunghezza
+        min_length = min(len(returns) for returns in asset_returns)
+        asset_returns = [returns[:min_length] for returns in asset_returns]
+        
+        # Calcola le correlazioni
+        df = pd.DataFrame(asset_returns).T
+        correlation_matrix = df.corr().values.tolist()
+    
+    # Converti la matrice in un formato adatto per il grafico
+    correlation_values = []
+    if correlation_matrix:
+        for i in range(len(asset_names)):
+            for j in range(len(asset_names)):
+                correlation_values.append({
+                    'x': asset_names[i],
+                    'y': asset_names[j],
+                    'v': correlation_matrix[i][j]
+                })
+    
+    return jsonify({
+        'labels': asset_names,
+        'correlationMatrix': correlation_matrix,
+        'correlationValues': correlation_values
+    })
+
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001)  # Usa la porta 5001 invece della 5000

@@ -33,9 +33,14 @@
 
         <div class="header-section">
             <h1 class="section-title">{{ portfolio.name }}</h1>
-            <button id="addAssetBtn" class="btn">
-                <i class="fas fa-plus"></i> Aggiungi Strumento
-            </button>
+            <div>
+                <a href="{{ url_for('portfolio_analysis', portfolio_id=portfolio_id) }}" class="btn btn-secondary">
+                    <i class="fas fa-chart-line"></i> Analisi Avanzata
+                </a>
+                <button id="addAssetBtn" class="btn">
+                    <i class="fas fa-plus"></i> Aggiungi Strumento
+                </button>
+            </div>
         </div>
 
         <div class="card fade-in">

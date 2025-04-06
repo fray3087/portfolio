@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analisi Portafoglio - PortfolioTracker</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+</head>
+<body class="dashboard">
+    <div class="navbar">
+        <div class="nav-logo">
+            <div class="logo">PT</div>
+            <span class="nav-title">Portfolio Tracker</span>
+        </div>
+        <div class="nav-links">
+            <a href="{{ url_for('portfolio_detail', portfolio_id=portfolio_id) }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Torna al Portafoglio
+            </a>
+        </div>
+    </div>
+
+    <div class="dashboard-container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <div class="header-section">
+            <h1 class="section-title">Analisi di {{ portfolio.name }}</h1>
+            <div class="period-selector">
+                <button class="btn period-btn active" data-period="1m">1 Mese</button>
+                <button class="btn period-btn" data-period="3m">3 Mesi</button>
+                <button class="btn period-btn" data-period="6m">6 Mesi</button>
+                <button class="btn period-btn" data-period="ytd">YTD</button>
+                <button class="btn period-btn" data-period="1y">1 Anno</button>
+                <button class="btn period-btn" data-period="all">Tutto</button>
+            </div>
+        </div>
+
+        <!-- Performance Chart -->
+        <div class="card fade-in">
+            <h2 class="card-title"><i class="fas fa-chart-line"></i> Andamento del Portafoglio</h2>
+            <div class="chart-container">
+                <canvas id="performanceChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Metriche Key -->
+        <div class="metrics-container">
+            <div class="card metrics-card fade-in">
+                <h3 class="card-title"><i class="fas fa-tachometer-alt"></i> Metriche di Performance</h3>
+                <div class="metrics-grid">
+                    <div class="metric-item">
+                        <span class="metric-label">Rendimento Totale</span>
+                        <span class="metric-value" id="totalReturn">--.--</span>
+                    </div>
+                    <div class="metric-item">
+                        <span class="metric-label">Rendimento Annualizzato</span>
+                        <span class="metric-value" id="annualizedReturn">--.--</span>
+                    </div>
+                    <div class="metric-item">
+                        <span class="metric-label">Alfa</span>
+                        <span class="metric-value" id="alpha">--.--</span>
+                    </div>
+                    <div class="metric-item">
+                        <span class="metric-label">Beta</span>
+                        <span class="metric-value" id="beta">--.--</span>
+                    </div>
+                    <div class="metric-item">
+                        <span class="metric-label">Sharpe Ratio</span>
+                        <span class="metric-value" id="sharpeRatio">--.--</span>
+                    </div>
+                    <div class="metric-item">
+                        <span class="metric-label">Volatilità</span>
+                        <span class="metric-value" id="volatility">--.--</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card metrics-card fade-in">
+                <h3 class="card-title"><i class="fas fa-arrow-down"></i> Drawdown Analysis</h3>
+                <div class="metrics-grid">
+                    <div class="metric-item">
+                        <span class="metric-label">Drawdown Massimo</span>
+                        <span class="metric-value" id="maxDrawdown">--.--</span>
+                    </div>
+                    <div class="metric-item">
+                        <span class="metric-label">Durata Drawdown Medio</span>
+                        <span class="metric-value" id="avgDrawdownDuration">--.--</span>
+                    </div>
+                    <div class="metric-item">
+                        <span class="metric-label">Tempo di Recupero Medio</span>
+                        <span class="metric-value" id="avgRecoveryTime">--.--</span>
+                    </div>
+                    <div class="metric-item">
+                        <span class="metric-label">Drawdown Corrente</span>
+                        <span class="metric-value" id="currentDrawdown">--.--</span>
+                    </div>
+                </div>
+                <div class="chart-container drawdown-chart-container">
+                    <canvas id="drawdownChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Asset Allocation e Rischio -->
+        <div class="metrics-container">
+            <div class="card metrics-card fade-in">
+                <h3 class="card-title"><i class="fas fa-pie-chart"></i> Asset Allocation</h3>
+                <div class="chart-container allocation-chart-container">
+                    <canvas id="allocationChart"></canvas>
+                </div>
+            </div>
+
+            <div class="card metrics-card fade-in">
+                <h3 class="card-title"><i class="fas fa-balance-scale"></i> Rischio/Rendimento</h3>
+                <div class="chart-container risk-return-chart-container">
+                    <canvas id="riskReturnChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Distribuzione dei Rendimenti -->
+        <div class="card fade-in">
+            <h3 class="card-title"><i class="fas fa-stream"></i> Distribuzione dei Rendimenti</h3>
+            <div class="chart-container">
+                <canvas id="returnsDistributionChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Correlazioni -->
+        <div class="card fade-in">
+            <h3 class="card-title"><i class="fas fa-project-diagram"></i> Matrice di Correlazione tra Assets</h3>
+            <div class="chart-container correlation-chart-container">
+                <canvas id="correlationChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/analysis.js') }}"></script>
+</body>
+</html>
