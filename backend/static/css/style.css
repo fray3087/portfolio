@@ -1148,3 +1148,11 @@ table tr:hover {
 .stress-test-results {
     margin-top: 25px;
 }
+.nav-links {
+    display: flex;
+    gap: 12px;  /* Questo garantisce la spaziatura corretta */
+}
+
+.btn {
+    white-space: nowrap;  /* Evita che il testo vada a capo all'interno del pulsante */
+}

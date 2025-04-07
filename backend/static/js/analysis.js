@@ -161,94 +161,70 @@ document.addEventListener('DOMContentLoaded', function() {
     
         // Chiama l'API per ottenere i dati del benchmark
         fetch(`/api/benchmark/${benchmarkSymbol}?period=${currentPeriod}&portfolio_id=${portfolioId}`)
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`Errore API: ${response.status}`);
+                }
+                return response.json();
+            })
             .then(data => {
                 // Rimuovi lo spinner
                 document.querySelector('.benchmark-spinner').remove();
     
                 // Aggiorna il grafico con i dati del benchmark
                 if (performanceChart) {
-                    // Aggiungi i dati del benchmark al grafico
-                    performanceChart.data.datasets[1].data = data.values;
-                    performanceChart.data.datasets[1].label = data.name;
+                    // Qui facciamo l'allineamento delle date
+                    const chartDates = performanceChart.data.labels;
+                    const benchmarkDates = data.dates;
+                    const benchmarkValues = data.values;
                     
-                    // Aggiorna il grafico
-                    performanceChart.update();
-                    
-                    // Aggiungi informazioni comparative sotto il grafico
-                    const benchmarkInfo = document.createElement('div');
-                    benchmarkInfo.className = 'benchmark-info';
-                    
-                    // Calcola la sovra/sottoperformance
-                    const portfolioValues = performanceChart.data.datasets[0].data;
-                    const portfolioFinalValue = portfolioValues[portfolioValues.length - 1];
-                    const benchmarkFinalValue = data.values[data.values.length - 1];
-                    
-                    const outperformance = portfolioFinalValue - benchmarkFinalValue;
-                    const outperformancePercentage = (outperformance / benchmarkFinalValue * 100).toFixed(2);
-                    
-                    const isOutperforming = outperformance > 0;
-                    
-                    benchmarkInfo.innerHTML = `
-                        <div class="benchmark-comparison">
-                            <p>
-                                <strong>Confronto con ${data.name}:</strong> Il tuo portafoglio ha 
-                                <span class="${isOutperforming ? 'positive' : 'negative'}">
-                                    ${isOutperforming ? 'sovraperformato' : 'sottoperformato'} di 
-                                    ${Math.abs(outperformancePercentage)}%
-                                </span> 
-                                rispetto al benchmark in questo periodo.
-                            </p>
-                            <p class="benchmark-values">
-                                Valore iniziale: €${formatNumber(data.initial_investment)} → 
-                                Benchmark finale: €${formatNumber(benchmarkFinalValue)} | 
-                                Portafoglio finale: €${formatNumber(portfolioFinalValue)}
-                            </p>
-                        </div>
-                    `;
-                    
-                    // Aggiungi stili
-                    const style = document.createElement('style');
-                    style.textContent = `
-                        .benchmark-info {
-                            margin-top: 15px;
-                            padding: 10px 15px;
-                            background-color: #f8fafc;
-                            border-radius: 8px;
-                            font-size: 14px;
-                        }
-                        .benchmark-comparison {
-                            line-height: 1.6;
-                        }
-                        .benchmark-values {
-                            font-size: 13px;
-                            color: #64748b;
-                            margin-top: 5px;
-                        }
-                        .positive {
-                            color: #10b981;
-                            font-weight: bold;
-                        }
-                        .negative {
-                            color: #ef4444;
-                            font-weight: bold;
-                        }
-                    `;
-                    document.head.appendChild(style);
-                    
-                    // Rimuovi eventuali info benchmark precedenti
-                    const oldInfo = document.querySelector('.benchmark-info');
-                    if (oldInfo) {
-                        oldInfo.remove();
+                    // Creiamo un mapping data -> valore
+                    const benchmarkMap = {};
+                    for (let i = 0; i < benchmarkDates.length; i++) {
+                        benchmarkMap[benchmarkDates[i]] = benchmarkValues[i];
                     }
                     
-                    // Aggiungi le nuove info
-                    performanceChartContainer.parentNode.appendChild(benchmarkInfo);
+                    // Allineiamo i valori del benchmark con le date del grafico
+                    const alignedValues = [];
+                    for (let date of chartDates) {
+                        // Cerca la data esatta o la più vicina
+                        if (benchmarkMap[date] !== undefined) {
+                            alignedValues.push(benchmarkMap[date]);
+                        } else {
+                            // Trova la data più vicina
+                            let closestDate = null;
+                            let minDiff = Infinity;
+                            
+                            for (let bmDate of benchmarkDates) {
+                                const diff = Math.abs(new Date(date) - new Date(bmDate));
+                                if (diff < minDiff) {
+                                    minDiff = diff;
+                                    closestDate = bmDate;
+                                }
+                            }
+                            
+                            // Usa il valore della data più vicina o l'ultimo valore se non c'è corrispondenza
+                            if (closestDate && benchmarkMap[closestDate] !== undefined) {
+                                alignedValues.push(benchmarkMap[closestDate]);
+                            } else if (alignedValues.length > 0) {
+                                alignedValues.push(alignedValues[alignedValues.length - 1]);
+                            } else {
+                                alignedValues.push(null);
+                            }
+                        }
+                    }
+                    
+                    // Aggiorna il grafico con i valori allineati
+                    performanceChart.data.datasets[1].data = alignedValues;
+                    performanceChart.data.datasets[1].label = data.name;
+                    performanceChart.update();
                 }
             })
             .catch(error => {
                 console.error('Errore nel caricamento dei dati del benchmark:', error);
-                document.querySelector('.benchmark-spinner').remove();
+                if (document.querySelector('.benchmark-spinner')) {
+                    document.querySelector('.benchmark-spinner').remove();
+                }
                 
                 // Mostra un messaggio di errore
                 const errorMsg = document.createElement('div');

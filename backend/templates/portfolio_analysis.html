@@ -17,9 +17,10 @@
         </div>
         <div class="nav-links">
             <a href="{{ url_for('portfolio_detail', portfolio_id=portfolio_id) }}" class="btn btn-secondary">
-                <a href="{{ url_for('portfolio_stress_test', portfolio_id=portfolio_id) }}" class="btn btn-primary">
-                    <i class="fas fa-exclamation-triangle"></i> Stress Test    
                 <i class="fas fa-arrow-left"></i> Torna al Portafoglio
+            </a>
+            <a href="{{ url_for('portfolio_stress_test', portfolio_id=portfolio_id) }}" class="btn btn-secondary">
+                <i class="fas fa-exclamation-triangle"></i> Stress Test
             </a>
         </div>
     </div>

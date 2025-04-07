@@ -1828,36 +1828,27 @@ def get_analysis_data(portfolio_id):
     
     return jsonify(full_data)
 
-@app.route('/api/benchmark/<symbol>', methods=['GET'])
+@app.route('/api/benchmark/<symbol>')
 def get_benchmark_data(symbol):
     period = request.args.get('period', '1m')
     portfolio_id = request.args.get('portfolio_id')
-    
-    if not portfolio_id:
-        return jsonify({'error': 'Portfolio ID richiesto'}), 400
-    
-    username = session.get('username')
-    if not username or portfolio_id not in users[username]['portfolios']:
-        return jsonify({'error': 'Portfolio non trovato'}), 404
-    
-    portfolio = users[username]['portfolios'][portfolio_id]
     
     # Ottieni le date di inizio e fine
     end_date = datetime.now()
     
     # Determinare la data di inizio in base al periodo
     if period == '1m':
-        start_date = end_date - timedelta(days=30)
+        start_date = end_date - timedelta(days=35)
     elif period == '3m':
-        start_date = end_date - timedelta(days=90)
+        start_date = end_date - timedelta(days=100)
     elif period == '6m':
-        start_date = end_date - timedelta(days=180)
+        start_date = end_date - timedelta(days=190)
     elif period == 'ytd':
         start_date = datetime(end_date.year, 1, 1)
     elif period == '1y':
-        start_date = end_date - timedelta(days=365)
-    else:
-        start_date = end_date - timedelta(days=1095)  # 3 anni
+        start_date = end_date - timedelta(days=380)
+    else:  # 'all'
+        start_date = end_date - timedelta(days=1900)
     
     try:
         # Ottieni i dati storici usando yfinance
@@ -1867,63 +1858,23 @@ def get_benchmark_data(symbol):
         if hist.empty:
             return jsonify({'error': 'Dati non disponibili per questo benchmark'}), 404
         
-        # Ottieni i valori del portafoglio per lo stesso periodo
-        portfolio_values = []
-        portfolio_dates = []
-        
-        # Determina i valori del portafoglio alla data di inizio
-        portfolio_value_at_start = 0
-        for asset in portfolio['assets']:
-            net_quantity_at_start = 0
-            for transaction in asset['transactions']:
-                transaction_date = datetime.strptime(transaction['date'], '%Y-%m-%d')
-                if transaction_date <= start_date:
-                    if transaction['type'] == 'buy':
-                        net_quantity_at_start += transaction['quantity']
-                    else:
-                        net_quantity_at_start -= transaction['quantity']
-            
-            # Trova il prezzo all'inizio del periodo
-            start_price = 0
-            if 'historical_prices' in asset:
-                start_date_str = start_date.strftime('%Y-%m-%d')
-                # Trova il prezzo più vicino alla data di inizio
-                min_date_diff = float('inf')
-                for price_date, price in asset['historical_prices'].items():
-                    if price_date <= start_date_str:
-                        date_diff = abs((start_date - datetime.strptime(price_date, '%Y-%m-%d')).days)
-                        if date_diff < min_date_diff:
-                            min_date_diff = date_diff
-                            start_price = price
-            
-            portfolio_value_at_start += net_quantity_at_start * start_price
-        
-        # Se il portafoglio non aveva valore all'inizio, usa un valore predefinito
-        if portfolio_value_at_start <= 0:
-            portfolio_value_at_start = 10000  # Valore iniziale predefinito
-        
-        # Calcola quante unità del benchmark avresti potuto acquistare con il valore iniziale del portfolio
-        benchmark_shares = portfolio_value_at_start / hist['Close'].iloc[0] if hist['Close'].iloc[0] > 0 else 0
-        
-        # Calcola i valori del benchmark equivalenti per ogni data
-        benchmark_values = (hist['Close'] * benchmark_shares).tolist()
-        benchmark_dates = hist.index.strftime('%Y-%m-%d').tolist()
-        
-        # Calcola il rendimento percentuale del benchmark
-        benchmark_return = ((hist['Close'].iloc[-1] / hist['Close'].iloc[0]) - 1) * 100 if hist['Close'].iloc[0] > 0 else 0
+        # Normalizza i dati per il confronto
+        initial_investment = 10000
+        first_value = hist['Close'].iloc[0]
+        normalized_values = [(value / first_value) * initial_investment for value in hist['Close']]
+        dates = hist.index.strftime('%Y-%m-%d').tolist()
         
         return jsonify({
             'symbol': symbol,
             'name': ticker.info.get('shortName', symbol),
-            'values': benchmark_values,
-            'dates': benchmark_dates,
-            'initial_investment': portfolio_value_at_start,
-            'final_value': benchmark_values[-1] if benchmark_values else 0,
-            'return_percentage': benchmark_return
+            'values': normalized_values,
+            'dates': dates,
+            'initial_investment': initial_investment,
+            'return_percentage': ((hist['Close'].iloc[-1] / first_value) - 1) * 100
         })
     except Exception as e:
         print(f"Errore nel caricamento del benchmark {symbol}: {e}")
-        return jsonify({'error': str(e)}), 500  
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/portfolios/<portfolio_id>/stress-test')
 def portfolio_stress_test(portfolio_id):
