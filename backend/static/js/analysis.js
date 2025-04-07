@@ -33,6 +33,248 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Carica i dati iniziali
         loadChartData(currentPeriod);
+
+        // Aggiungi il setup del benchmark comparison
+        setupBenchmarkComparison();
+    }
+
+    /**
+     * Aggiunge funzionalità di comparazione con benchmark
+     */
+    function setupBenchmarkComparison() {
+        // Crea un selettore di benchmark nell'HTML
+        const headerSection = document.querySelector('.period-selector');
+        const benchmarkSelector = document.createElement('div');
+        benchmarkSelector.className = 'benchmark-selector';
+        benchmarkSelector.innerHTML = `
+            <span class="benchmark-label">Confronta con:</span>
+            <select id="benchmarkSelect" class="benchmark-select">
+                <option value="SPY">S&P 500 (SPY)</option>
+                <option value="IWDA.L">MSCI World (IWDA)</option>
+                <option value="EUNL.DE">STOXX Europe 600</option>
+                <option value="BTP10Y">BTP 10Y</option>
+                <option value="GOLD">Oro</option>
+                <option value="none" selected>Nessun benchmark</option>
+            </select>
+        `;
+        headerSection.appendChild(benchmarkSelector);
+
+        // Aggiungi stili CSS inline
+        const style = document.createElement('style');
+        style.textContent = `
+            .benchmark-selector {
+                display: flex;
+                align-items: center;
+                margin-left: 20px;
+            }
+            .benchmark-label {
+                margin-right: 10px;
+                font-size: 14px;
+                color: #64748b;
+            }
+            .benchmark-select {
+                padding: 6px 10px;
+                border-radius: 4px;
+                border: 1px solid #e2e8f0;
+                background-color: white;
+                font-size: 14px;
+                color: #334155;
+            }
+            .benchmark-select:focus {
+                outline: none;
+                border-color: #3a86ff;
+                box-shadow: 0 0 0 2px rgba(58, 134, 255, 0.2);
+            }
+            .benchmark-legend {
+                display: flex;
+                align-items: center;
+                margin-top: 10px;
+                justify-content: center;
+            }
+            .benchmark-legend-item {
+                display: flex;
+                align-items: center;
+                margin-right: 20px;
+            }
+            .benchmark-legend-color {
+                width: 12px;
+                height: 12px;
+                border-radius: 50%;
+                margin-right: 5px;
+            }
+        `;
+        document.head.appendChild(style);
+
+        // Aggiungi una legenda sotto il grafico principale
+        const performanceChartContainer = document.getElementById('performanceChart').parentElement;
+        const benchmarkLegend = document.createElement('div');
+        benchmarkLegend.className = 'benchmark-legend';
+        benchmarkLegend.innerHTML = `
+            <div class="benchmark-legend-item">
+                <div class="benchmark-legend-color" style="background-color: #3a86ff;"></div>
+                <span>Portafoglio</span>
+            </div>
+            <div class="benchmark-legend-item benchmark-item" style="display: none;">
+                <div class="benchmark-legend-color" style="background-color: #8b5cf6;"></div>
+                <span class="benchmark-name">Benchmark</span>
+            </div>
+        `;
+        performanceChartContainer.appendChild(benchmarkLegend);
+
+        // Gestisci il cambio di benchmark
+        document.getElementById('benchmarkSelect').addEventListener('change', function() {
+            const benchmark = this.value;
+            if (benchmark === 'none') {
+                // Nascondi il benchmark dal grafico
+                if (performanceChart) {
+                    performanceChart.data.datasets[1].data = [];
+                    performanceChart.update();
+                    document.querySelector('.benchmark-item').style.display = 'none';
+                    
+                    // Nascondi anche le informazioni comparative
+                    const benchmarkInfo = document.querySelector('.benchmark-info');
+                    if (benchmarkInfo) {
+                        benchmarkInfo.remove();
+                    }
+                }
+            } else {
+                // Mostra il benchmark selezionato
+                document.querySelector('.benchmark-item').style.display = 'flex';
+                document.querySelector('.benchmark-name').textContent = this.options[this.selectedIndex].text;
+                loadBenchmarkData(benchmark);
+            }
+        });
+    }
+
+    // Funzione per caricare i dati del benchmark
+    function loadBenchmarkData(benchmarkSymbol) {
+        // Mostra un indicatore di caricamento
+        const performanceChartContainer = document.getElementById('performanceChart').parentElement;
+        const loadingSpinner = document.createElement('div');
+        loadingSpinner.className = 'loading-spinner benchmark-spinner';
+        loadingSpinner.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        performanceChartContainer.appendChild(loadingSpinner);
+    
+        // Ottieni il portfolio ID e il periodo corrente
+        const portfolioId = window.location.pathname.split('/')[2];
+        const currentPeriod = document.querySelector('.period-btn.active').dataset.period;
+    
+        // Chiama l'API per ottenere i dati del benchmark
+        fetch(`/api/benchmark/${benchmarkSymbol}?period=${currentPeriod}&portfolio_id=${portfolioId}`)
+            .then(response => response.json())
+            .then(data => {
+                // Rimuovi lo spinner
+                document.querySelector('.benchmark-spinner').remove();
+    
+                // Aggiorna il grafico con i dati del benchmark
+                if (performanceChart) {
+                    // Aggiungi i dati del benchmark al grafico
+                    performanceChart.data.datasets[1].data = data.values;
+                    performanceChart.data.datasets[1].label = data.name;
+                    
+                    // Aggiorna il grafico
+                    performanceChart.update();
+                    
+                    // Aggiungi informazioni comparative sotto il grafico
+                    const benchmarkInfo = document.createElement('div');
+                    benchmarkInfo.className = 'benchmark-info';
+                    
+                    // Calcola la sovra/sottoperformance
+                    const portfolioValues = performanceChart.data.datasets[0].data;
+                    const portfolioFinalValue = portfolioValues[portfolioValues.length - 1];
+                    const benchmarkFinalValue = data.values[data.values.length - 1];
+                    
+                    const outperformance = portfolioFinalValue - benchmarkFinalValue;
+                    const outperformancePercentage = (outperformance / benchmarkFinalValue * 100).toFixed(2);
+                    
+                    const isOutperforming = outperformance > 0;
+                    
+                    benchmarkInfo.innerHTML = `
+                        <div class="benchmark-comparison">
+                            <p>
+                                <strong>Confronto con ${data.name}:</strong> Il tuo portafoglio ha 
+                                <span class="${isOutperforming ? 'positive' : 'negative'}">
+                                    ${isOutperforming ? 'sovraperformato' : 'sottoperformato'} di 
+                                    ${Math.abs(outperformancePercentage)}%
+                                </span> 
+                                rispetto al benchmark in questo periodo.
+                            </p>
+                            <p class="benchmark-values">
+                                Valore iniziale: €${formatNumber(data.initial_investment)} → 
+                                Benchmark finale: €${formatNumber(benchmarkFinalValue)} | 
+                                Portafoglio finale: €${formatNumber(portfolioFinalValue)}
+                            </p>
+                        </div>
+                    `;
+                    
+                    // Aggiungi stili
+                    const style = document.createElement('style');
+                    style.textContent = `
+                        .benchmark-info {
+                            margin-top: 15px;
+                            padding: 10px 15px;
+                            background-color: #f8fafc;
+                            border-radius: 8px;
+                            font-size: 14px;
+                        }
+                        .benchmark-comparison {
+                            line-height: 1.6;
+                        }
+                        .benchmark-values {
+                            font-size: 13px;
+                            color: #64748b;
+                            margin-top: 5px;
+                        }
+                        .positive {
+                            color: #10b981;
+                            font-weight: bold;
+                        }
+                        .negative {
+                            color: #ef4444;
+                            font-weight: bold;
+                        }
+                    `;
+                    document.head.appendChild(style);
+                    
+                    // Rimuovi eventuali info benchmark precedenti
+                    const oldInfo = document.querySelector('.benchmark-info');
+                    if (oldInfo) {
+                        oldInfo.remove();
+                    }
+                    
+                    // Aggiungi le nuove info
+                    performanceChartContainer.parentNode.appendChild(benchmarkInfo);
+                }
+            })
+            .catch(error => {
+                console.error('Errore nel caricamento dei dati del benchmark:', error);
+                document.querySelector('.benchmark-spinner').remove();
+                
+                // Mostra un messaggio di errore
+                const errorMsg = document.createElement('div');
+                errorMsg.className = 'benchmark-error';
+                errorMsg.textContent = 'Errore nel caricamento del benchmark';
+                errorMsg.style.color = '#ef4444';
+                errorMsg.style.fontSize = '14px';
+                errorMsg.style.marginTop = '5px';
+                errorMsg.style.textAlign = 'center';
+                performanceChartContainer.appendChild(errorMsg);
+                
+                // Rimuovi l'errore dopo 3 secondi
+                setTimeout(() => {
+                    if (document.querySelector('.benchmark-error')) {
+                        document.querySelector('.benchmark-error').remove();
+                    }
+                }, 3000);
+            });
+    }
+    
+    // Funzione helper per formattare i numeri
+    function formatNumber(value) {
+        return new Intl.NumberFormat('it-IT', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        }).format(value);
     }
     
     /**
@@ -79,6 +321,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 updateRiskReturnChart(data.riskReturn);
                 updateReturnsDistributionChart(data.returnsDistribution);
                 updateCorrelationChart(data.correlation);
+                
+                // Se c'è un benchmark selezionato, ricarica anche quello
+                const benchmarkSelect = document.getElementById('benchmarkSelect');
+                if (benchmarkSelect && benchmarkSelect.value !== 'none') {
+                    loadBenchmarkData(benchmarkSelect.value);
+                }
             })
             .catch(error => {
                 console.error('Errore nel caricamento dei dati:', error);
@@ -298,7 +546,13 @@ document.addEventListener('DOMContentLoaded', function() {
      * Inizializza o aggiorna il grafico di drawdown
      */
     function updateDrawdownChart(data) {
-        const ctx = document.getElementById('drawdownChart').getContext('2d');
+        const canvas = document.getElementById('drawdownChart');
+        if (!canvas) {
+            console.error('Elemento drawdownChart non trovato nel DOM');
+            return;
+        }
+        
+        const ctx = canvas.getContext('2d');
         
         // Se il grafico esiste già, distruggilo per ricrearlo
         if (drawdownChart) {
@@ -366,7 +620,13 @@ document.addEventListener('DOMContentLoaded', function() {
      * Inizializza o aggiorna il grafico di allocazione degli asset
      */
     function updateAllocationChart(data) {
-        const ctx = document.getElementById('allocationChart').getContext('2d');
+        const canvas = document.getElementById('allocationChart');
+        if (!canvas) {
+            console.error('Elemento allocationChart non trovato nel DOM');
+            return;
+        }
+        
+        const ctx = canvas.getContext('2d');
         
         // Se il grafico esiste già, distruggilo per ricrearlo
         if (allocationChart) {
@@ -416,7 +676,13 @@ document.addEventListener('DOMContentLoaded', function() {
      * Inizializza o aggiorna il grafico rischio/rendimento
      */
     function updateRiskReturnChart(data) {
-        const ctx = document.getElementById('riskReturnChart').getContext('2d');
+        const canvas = document.getElementById('riskReturnChart');
+        if (!canvas) {
+            console.error('Elemento riskReturnChart non trovato nel DOM');
+            return;
+        }
+        
+        const ctx = canvas.getContext('2d');
         
         // Se il grafico esiste già, distruggilo per ricrearlo
         if (riskReturnChart) {
@@ -500,7 +766,13 @@ document.addEventListener('DOMContentLoaded', function() {
      * Inizializza o aggiorna il grafico della distribuzione dei rendimenti
      */
     function updateReturnsDistributionChart(data) {
-        const ctx = document.getElementById('returnsDistributionChart').getContext('2d');
+        const canvas = document.getElementById('returnsDistributionChart');
+        if (!canvas) {
+            console.error('Elemento returnsDistributionChart non trovato nel DOM');
+            return;
+        }
+        
+        const ctx = canvas.getContext('2d');
         
         // Se il grafico esiste già, distruggilo per ricrearlo
         if (returnsDistributionChart) {
@@ -567,14 +839,15 @@ document.addEventListener('DOMContentLoaded', function() {
      * Inizializza o aggiorna il grafico di correlazione
      */
     function updateCorrelationChart(data) {
-        const ctx = document.getElementById('correlationChart').getContext('2d');
+        const canvas = document.getElementById('correlationChart');
         
         // Aggiungi questo controllo
-        if (!ctx) {
+        if (!canvas) {
             console.error('Elemento correlationChart non trovato nel DOM');
             return;
         }
 
+        const ctx = canvas.getContext('2d');
 
         // Se il grafico esiste già, distruggilo per ricrearlo
         if (correlationChart) {
@@ -605,7 +878,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             label: 'Coefficiente di Correlazione',
                             data: [correlation],
                             backgroundColor: correlation > 0 ? 
-                                `rgba(58, 134, 255, ${Math.abs(correlation)})` : 
+                                `rgba(58,134, 255, ${Math.abs(correlation)})` : 
                                 `rgba(239, 68, 68, ${Math.abs(correlation)})`,
                             borderWidth: 1
                         }]
@@ -781,4 +1054,4 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Avvia il precaching dopo il caricamento iniziale
     setTimeout(precacheData, 3000);
-});
+}); 

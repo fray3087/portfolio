@@ -1828,5 +1828,309 @@ def get_analysis_data(portfolio_id):
     
     return jsonify(full_data)
 
+@app.route('/api/benchmark/<symbol>', methods=['GET'])
+def get_benchmark_data(symbol):
+    period = request.args.get('period', '1m')
+    portfolio_id = request.args.get('portfolio_id')
+    
+    if not portfolio_id:
+        return jsonify({'error': 'Portfolio ID richiesto'}), 400
+    
+    username = session.get('username')
+    if not username or portfolio_id not in users[username]['portfolios']:
+        return jsonify({'error': 'Portfolio non trovato'}), 404
+    
+    portfolio = users[username]['portfolios'][portfolio_id]
+    
+    # Ottieni le date di inizio e fine
+    end_date = datetime.now()
+    
+    # Determinare la data di inizio in base al periodo
+    if period == '1m':
+        start_date = end_date - timedelta(days=30)
+    elif period == '3m':
+        start_date = end_date - timedelta(days=90)
+    elif period == '6m':
+        start_date = end_date - timedelta(days=180)
+    elif period == 'ytd':
+        start_date = datetime(end_date.year, 1, 1)
+    elif period == '1y':
+        start_date = end_date - timedelta(days=365)
+    else:
+        start_date = end_date - timedelta(days=1095)  # 3 anni
+    
+    try:
+        # Ottieni i dati storici usando yfinance
+        ticker = yf.Ticker(symbol)
+        hist = ticker.history(start=start_date, end=end_date)
+        
+        if hist.empty:
+            return jsonify({'error': 'Dati non disponibili per questo benchmark'}), 404
+        
+        # Ottieni i valori del portafoglio per lo stesso periodo
+        portfolio_values = []
+        portfolio_dates = []
+        
+        # Determina i valori del portafoglio alla data di inizio
+        portfolio_value_at_start = 0
+        for asset in portfolio['assets']:
+            net_quantity_at_start = 0
+            for transaction in asset['transactions']:
+                transaction_date = datetime.strptime(transaction['date'], '%Y-%m-%d')
+                if transaction_date <= start_date:
+                    if transaction['type'] == 'buy':
+                        net_quantity_at_start += transaction['quantity']
+                    else:
+                        net_quantity_at_start -= transaction['quantity']
+            
+            # Trova il prezzo all'inizio del periodo
+            start_price = 0
+            if 'historical_prices' in asset:
+                start_date_str = start_date.strftime('%Y-%m-%d')
+                # Trova il prezzo più vicino alla data di inizio
+                min_date_diff = float('inf')
+                for price_date, price in asset['historical_prices'].items():
+                    if price_date <= start_date_str:
+                        date_diff = abs((start_date - datetime.strptime(price_date, '%Y-%m-%d')).days)
+                        if date_diff < min_date_diff:
+                            min_date_diff = date_diff
+                            start_price = price
+            
+            portfolio_value_at_start += net_quantity_at_start * start_price
+        
+        # Se il portafoglio non aveva valore all'inizio, usa un valore predefinito
+        if portfolio_value_at_start <= 0:
+            portfolio_value_at_start = 10000  # Valore iniziale predefinito
+        
+        # Calcola quante unità del benchmark avresti potuto acquistare con il valore iniziale del portfolio
+        benchmark_shares = portfolio_value_at_start / hist['Close'].iloc[0] if hist['Close'].iloc[0] > 0 else 0
+        
+        # Calcola i valori del benchmark equivalenti per ogni data
+        benchmark_values = (hist['Close'] * benchmark_shares).tolist()
+        benchmark_dates = hist.index.strftime('%Y-%m-%d').tolist()
+        
+        # Calcola il rendimento percentuale del benchmark
+        benchmark_return = ((hist['Close'].iloc[-1] / hist['Close'].iloc[0]) - 1) * 100 if hist['Close'].iloc[0] > 0 else 0
+        
+        return jsonify({
+            'symbol': symbol,
+            'name': ticker.info.get('shortName', symbol),
+            'values': benchmark_values,
+            'dates': benchmark_dates,
+            'initial_investment': portfolio_value_at_start,
+            'final_value': benchmark_values[-1] if benchmark_values else 0,
+            'return_percentage': benchmark_return
+        })
+    except Exception as e:
+        print(f"Errore nel caricamento del benchmark {symbol}: {e}")
+        return jsonify({'error': str(e)}), 500  
+
+@app.route('/portfolios/<portfolio_id>/stress-test')
+def portfolio_stress_test(portfolio_id):
+    if 'username' not in session:
+        return redirect(url_for('home'))
+    
+    username = session['username']
+    if portfolio_id not in users[username]['portfolios']:
+        flash('Portfolio non trovato', 'error')
+        return redirect(url_for('portfolios'))
+    
+    portfolio = users[username]['portfolios'][portfolio_id]
+    return render_template('portfolio_stress_test.html', portfolio=portfolio, portfolio_id=portfolio_id)
+
+@app.route('/api/portfolios/<portfolio_id>/stress-test', methods=['POST'])
+def run_stress_test(portfolio_id):
+    if 'username' not in session:
+        return jsonify({'error': 'Non autorizzato'}), 401
+    
+    username = session['username']
+    if portfolio_id not in users[username]['portfolios']:
+        return jsonify({'error': 'Portfolio non trovato'}), 404
+    
+    portfolio = users[username]['portfolios'][portfolio_id]
+    
+    # Ottieni i parametri dello stress test
+    data = request.json
+    scenario = data.get('scenario', 'custom')
+    
+    # Valore attuale del portafoglio
+    current_value = 0
+    asset_values = {}
+    
+    for asset in portfolio['assets']:
+        # Calcola la quantità netta posseduta
+        net_quantity = 0
+        for transaction in asset['transactions']:
+            if transaction['type'] == 'buy':
+                net_quantity += transaction['quantity']
+            else:  # sell
+                net_quantity -= transaction['quantity']
+        
+        # Calcola il valore attuale
+        asset_value = net_quantity * asset.get('current_price', 0)
+        current_value += asset_value
+        
+        # Salva il valore per asset per uso futuro
+        asset_values[asset['symbol']] = {
+            'name': asset['name'],
+            'value': asset_value,
+            'quantity': net_quantity,
+            'price': asset.get('current_price', 0),
+            'type': asset.get('type', 'Unknown')
+        }
+    
+    # Definisci gli scenari predefiniti
+    scenarios = {
+        'crisis_2008': {
+            'name': 'Crisi Finanziaria 2008',
+            'description': 'Simulazione della crisi finanziaria del 2008-2009 con crollo dei mercati azionari.',
+            'impacts': {
+                'Equity': -0.38,      # -38% azionario
+                'Bond': 0.05,         # +5% obbligazionario (flight to quality)
+                'Commodity': -0.30,   # -30% commodities
+                'RealEstate': -0.35,  # -35% immobiliare
+                'Cash': 0.0,          # 0% liquidità
+                'Crypto': -0.60,      # -60% crypto (ipotetico)
+                'Default': -0.30      # -30% default per asset non categorizzati
+            }
+        },
+        'inflation_shock': {
+            'name': 'Shock Inflazionistico',
+            'description': 'Scenario di alta inflazione con aumento aggressivo dei tassi di interesse.',
+            'impacts': {
+                'Equity': -0.15,      # -15% azionario
+                'Bond': -0.20,        # -20% obbligazionario (a causa dell'aumento dei tassi)
+                'Commodity': 0.25,    # +25% commodities
+                'RealEstate': -0.10,  # -10% immobiliare
+                'Cash': -0.08,        # -8% liquidità (erosione del potere d'acquisto)
+                'Crypto': -0.25,      # -25% crypto
+                'Default': -0.15      # -15% default
+            }
+        },
+        'tech_bubble': {
+            'name': 'Scoppio Bolla Tecnologica',
+            'description': 'Simulazione di uno scoppio di una bolla nel settore tecnologico.',
+            'impacts': {
+                'Equity': -0.25,      # -25% azionario generale
+                'Technology': -0.50,  # -50% tech
+                'Bond': 0.05,         # +5% obbligazionario
+                'Commodity': -0.05,   # -5% commodities
+                'RealEstate': -0.10,  # -10% immobiliare
+                'Cash': 0.0,          # 0% liquidità
+                'Crypto': -0.40,      # -40% crypto
+                'Default': -0.20      # -20% default
+            }
+        },
+        'recession': {
+            'name': 'Recessione Economica',
+            'description': 'Scenario di recessione economica globale moderata.',
+            'impacts': {
+                'Equity': -0.20,      # -20% azionario
+                'Bond': -0.05,        # -5% obbligazionario
+                'Commodity': -0.15,   # -15% commodities
+                'RealEstate': -0.15,  # -15% immobiliare
+                'Cash': 0.0,          # 0% liquidità
+                'Crypto': -0.30,      # -30% crypto
+                'Default': -0.15      # -15% default
+            }
+        },
+        'custom': {
+            'name': 'Scenario Personalizzato',
+            'description': 'Scenario personalizzato definito dall\'utente.',
+            'impacts': data.get('impacts', {
+                'Equity': -0.20,
+                'Bond': -0.10,
+                'Commodity': -0.15,
+                'RealEstate': -0.15,
+                'Cash': 0.0,
+                'Crypto': -0.25,
+                'Default': -0.15
+            })
+        }
+    }
+    
+    # Ottieni lo scenario selezionato
+    selected_scenario = scenarios.get(scenario, scenarios['custom'])
+    
+    # Mappa gli asset ai tipi per applicare gli impatti corretti
+    asset_types_mapping = {
+        'stock': 'Equity',
+        'etf': 'Equity',  # Assumiamo ETF azionari come default
+        'bond': 'Bond',
+        'commodity': 'Commodity',
+        'realestate': 'RealEstate',
+        'cash': 'Cash',
+        'crypto': 'Crypto'
+    }
+    
+    # Specifici ETF o asset che necessitano di una mappatura speciale
+    special_mapping = {
+        'BTC-USD': 'Crypto',
+        'ETH-USD': 'Crypto',
+        'GLD': 'Commodity',
+        'IAU': 'Commodity',
+        'SLV': 'Commodity',
+        'VNQ': 'RealEstate',
+        'IYR': 'RealEstate',
+        'AGG': 'Bond',
+        'BND': 'Bond',
+        'TLT': 'Bond',
+        'SHY': 'Bond'
+    }
+    
+    # Calcola l'impatto dello scenario
+    stressed_values = {}
+    total_stressed_value = 0
+    impact_by_asset = {}
+    
+    for symbol, asset_data in asset_values.items():
+        # Determina il tipo di asset per l'impatto
+        asset_type = asset_data.get('type', '').lower()
+        mapped_type = asset_types_mapping.get(asset_type, 'Default')
+        
+        # Controlla per mappature speciali
+        if symbol in special_mapping:
+            mapped_type = special_mapping[symbol]
+        elif 'bond' in asset_data['name'].lower() or 'treasury' in asset_data['name'].lower():
+            mapped_type = 'Bond'
+        elif 'gold' in asset_data['name'].lower() or 'silver' in asset_data['name'].lower():
+            mapped_type = 'Commodity'
+        elif 'tech' in asset_data['name'].lower() or 'technology' in asset_data['name'].lower():
+            mapped_type = 'Technology'
+        
+        # Ottieni l'impatto percentuale
+        impact_pct = selected_scenario['impacts'].get(mapped_type, selected_scenario['impacts']['Default'])
+        
+        # Calcola il nuovo valore
+        new_value = asset_data['value'] * (1 + impact_pct)
+        stressed_values[symbol] = new_value
+        total_stressed_value += new_value
+        
+        # Salva l'impatto per visualizzazione
+        impact_by_asset[asset_data['name']] = {
+            'original_value': asset_data['value'],
+            'stressed_value': new_value,
+            'impact_pct': impact_pct * 100,  # Converti in percentuale
+            'absolute_impact': new_value - asset_data['value'],
+            'type': mapped_type
+        }
+    
+    # Calcola la perdita totale
+    total_loss = total_stressed_value - current_value
+    percentage_loss = (total_loss / current_value) * 100 if current_value > 0 else 0
+    
+    result = {
+        'scenario': selected_scenario['name'],
+        'description': selected_scenario['description'],
+        'current_value': current_value,
+        'stressed_value': total_stressed_value,
+        'absolute_impact': total_loss,
+        'percentage_impact': percentage_loss,
+        'impact_by_asset': impact_by_asset
+    }
+    
+    return jsonify(result)
+
+
 if __name__ == '__main__':
     app.run(debug=True, port=5001)  # Usa la porta 5001 invece della 5000

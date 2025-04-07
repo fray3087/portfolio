@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stress Test - PortfolioTracker</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+</head>
+<body class="dashboard">
+    <div class="navbar">
+        <div class="nav-logo">
+            <div class="logo">PT</div>
+            <span class="nav-title">Portfolio Tracker</span>
+        </div>
+        <div class="nav-links">
+            <a href="{{ url_for('portfolio_detail', portfolio_id=portfolio_id) }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Torna al Portafoglio
+            </a>
+            <a href="{{ url_for('portfolio_analysis', portfolio_id=portfolio_id) }}" class="btn btn-secondary">
+                <i class="fas fa-chart-line"></i> Analisi
+            </a>
+        </div>
+    </div>
+
+    <div class="dashboard-container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <div class="header-section">
+            <h1 class="section-title">Stress Test: {{ portfolio.name }}</h1>
+        </div>
+
+        <div class="card fade-in">
+            <h2 class="card-title"><i class="fas fa-exclamation-triangle"></i> Simulazione Scenari di Stress</h2>
+            <div class="stress-test-container">
+                <div class="scenario-selector">
+                    <div class="selector-label">Seleziona uno scenario:</div>
+                    <div class="scenario-options">
+                        <button class="btn scenario-btn active" data-scenario="crisis_2008">Crisi 2008</button>
+                        <button class="btn scenario-btn" data-scenario="inflation_shock">Shock Inflazione</button>
+                        <button class="btn scenario-btn" data-scenario="tech_bubble">Bolla Tech</button>
+                        <button class="btn scenario-btn" data-scenario="recession">Recessione</button>
+                        <button class="btn scenario-btn" data-scenario="custom">Personalizzato</button>
+                    </div>
+                </div>
+
+                <div id="customScenarioInputs" class="custom-scenario-inputs" style="display: none;">
+                    <h3>Impatto per Classi di Asset (%)</h3>
+                    <div class="custom-inputs-grid">
+                        <div class="input-group">
+                            <label for="equity-impact">Azionario:</label>
+                            <input type="number" id="equity-impact" value="-20" min="-100" max="100">
+                        </div>
+                        <div class="input-group">
+                            <label for="bond-impact">Obbligazionario:</label>
+                            <input type="number" id="bond-impact" value="-10" min="-100" max="100">
+                        </div>
+                        <div class="input-group">
+                            <label for="commodity-impact">Commodities:</label>
+                            <input type="number" id="commodity-impact" value="-15" min="-100" max="100">
+                        </div>
+                        <div class="input-group">
+                            <label for="realestate-impact">Immobiliare:</label>
+                            <input type="number" id="realestate-impact" value="-15" min="-100" max="100">
+                        </div>
+                        <div class="input-group">
+                            <label for="cash-impact">Liquidità:</label>
+                            <input type="number" id="cash-impact" value="0" min="-100" max="100">
+                        </div>
+                        <div class="input-group">
+                            <label for="crypto-impact">Crypto:</label>
+                            <input type="number" id="crypto-impact" value="-25" min="-100" max="100">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="action-buttons">
+                    <button id="runStressTest" class="btn btn-primary">Esegui Simulazione</button>
+                </div>
+
+                <div id="stressTestResults" class="stress-test-results" style="display: none;">
+                    <!-- I risultati verranno inseriti qui via JavaScript -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/stress_test.js') }}"></script>
+</body>
+</html>
