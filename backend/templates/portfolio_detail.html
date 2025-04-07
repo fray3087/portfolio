@@ -25,7 +25,7 @@
             {% if messages %}
                 {% for category, message in messages %}
                     <div class="alert alert-{{ category }}">
-                        {{ message }}
+                        {{ message|safe }}
                     </div>
                 {% endfor %}
             {% endif %}
@@ -33,12 +33,15 @@
 
         <div class="header-section">
             <h1 class="section-title">{{ portfolio.name }}</h1>
-            <div>
+            <div class="header-actions">
                 <a href="{{ url_for('portfolio_analysis', portfolio_id=portfolio_id) }}" class="btn btn-secondary">
                     <i class="fas fa-chart-line"></i> Analisi Avanzata
                 </a>
                 <button id="addAssetBtn" class="btn">
                     <i class="fas fa-plus"></i> Aggiungi Strumento
+                </button>
+                <button id="csvUploadBtn" class="btn btn-secondary">
+                    <i class="fas fa-file-csv"></i> Importa Transazioni CSV
                 </button>
             </div>
         </div>
@@ -71,31 +74,31 @@
         </div>
 
         <!-- Performance su diversi periodi -->
-<div class="performance-summary fade-in">
-    <h2 class="section-title"><i class="fas fa-chart-bar"></i> Performance</h2>
-    <div class="performance-grid">
-        <div class="performance-card" id="month-performance">
-            <h3>Ultimo Mese</h3>
-            <div class="value">0.00%</div>
+        <div class="performance-summary fade-in">
+            <h2 class="section-title"><i class="fas fa-chart-bar"></i> Performance</h2>
+            <div class="performance-grid">
+                <div class="performance-card" id="month-performance">
+                    <h3>Ultimo Mese</h3>
+                    <div class="value">0.00%</div>
+                </div>
+                <div class="performance-card" id="three-month-performance">
+                    <h3>Ultimi 3 Mesi</h3>
+                    <div class="value">0.00%</div>
+                </div>
+                <div class="performance-card" id="six-month-performance">
+                    <h3>Ultimi 6 Mesi</h3>
+                    <div class="value">0.00%</div>
+                </div>
+                <div class="performance-card" id="ytd-performance">
+                    <h3>Anno in Corso</h3>
+                    <div class="value">0.00%</div>
+                </div>
+                <div class="performance-card" id="one-year-performance">
+                    <h3>Ultimi 12 Mesi</h3>
+                    <div class="value">0.00%</div>
+                </div>
+            </div>
         </div>
-        <div class="performance-card" id="three-month-performance">
-            <h3>Ultimi 3 Mesi</h3>
-            <div class="value">0.00%</div>
-        </div>
-        <div class="performance-card" id="six-month-performance">
-            <h3>Ultimi 6 Mesi</h3>
-            <div class="value">0.00%</div>
-        </div>
-        <div class="performance-card" id="ytd-performance">
-            <h3>Anno in Corso</h3>
-            <div class="value">0.00%</div>
-        </div>
-        <div class="performance-card" id="one-year-performance">
-            <h3>Ultimi 12 Mesi</h3>
-            <div class="value">0.00%</div>
-        </div>
-    </div>
-</div>
 
         <h2 class="section-title"><i class="fas fa-chart-line"></i> Strumenti nel Portafoglio</h2>
         
@@ -103,137 +106,140 @@
             {% if portfolio.assets %}
                 <div class="assets-list">
                     {% for asset in portfolio.assets %}
-    <div class="asset-card slide-in">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-            <h3>
-                <i class="fas fa-chart-bar"></i> {{ asset.name }} ({{ asset.symbol }})
-                {% if asset.type %}
-                    <span class="asset-type">{{ asset.type }}</span>
-                {% endif %}
-            </h3>
-            <button class="btn btn-danger btn-icon delete-asset-btn" data-symbol="{{ asset.symbol }}">
-                <i class="fas fa-trash"></i>
-            </button>
-        </div>
-        
-        <div class="asset-summary">
-            <p class="current-price">
-                Prezzo attuale: {{ asset.currency|default('USD') }} <span class="price-value">{{ asset.current_price|default(0)|round(2) }}</span>
-            </p>
-                
-<!-- Sostituire il div asset-performance esistente con questo codice aggiornato -->
-
-<div class="asset-performance" id="performance-{{ asset.symbol|replace('.', '_') }}">
-    <div class="asset-performance-grid">
-        <div class="asset-performance-item">
-            <span class="label">Quantità</span>
-            <span class="value net-quantity">0</span>
-        </div>
-        <div class="asset-performance-item">
-            <span class="label">Costo Medio</span>
-            <span class="value avg-cost">€ 0,00</span>
-        </div>
-        <div class="asset-performance-item">
-            <span class="label">Valore Attuale</span>
-            <span class="value current-value">€ 0,00</span>
-        </div>
-        <div class="asset-performance-item">
-            <span class="label">P/L</span>
-            <span class="value pl-value">€ 0,00 (0,00%)</span>
-        </div>
-    </div>
-    
-    <h5 class="performance-title">Variazioni</h5>
-    <div class="asset-performance-grid">
-        <div class="asset-performance-item">
-            <span class="label">Oggi</span>
-            <span class="value daily-change">0,00%</span>
-        </div>
-        <div class="asset-performance-item">
-            <span class="label">7 Giorni</span>
-            <span class="value weekly-change">0,00%</span>
-        </div>
-        <div class="asset-performance-item">
-            <span class="label">30 Giorni</span>
-            <span class="value monthly-change">0,00%</span>
-        </div>
-        <div class="asset-performance-item">
-            <span class="label">YTD</span>
-            <span class="value ytd-change">0,00%</span>
-        </div>
-        <div class="asset-performance-item">
-            <span class="label">3 Anni</span>
-            <span class="value three-year-change">N/A</span>
-        </div>
-        <div class="asset-performance-item">
-            <span class="label">5 Anni</span>
-            <span class="value five-year-change">N/A</span>
-        </div>
-        <div class="asset-performance-item">
-            <span class="label">10 Anni</span>
-            <span class="value ten-year-change">N/A</span>
-        </div>
-        <div class="asset-performance-item">
-            <span class="label">Dall'inizio</span>
-            <span class="value since-inception-change">0,00%</span>
-        </div>
-    </div>
-</div>
-      
-            
-        </div>
-        
-        <h4><i class="fas fa-exchange-alt"></i> Transazioni</h4>
-        
-        {% if asset.transactions %}
-            <table class="transactions-table">
-                <thead>
-                    <tr>
-                        <th>Data</th>
-                        <th>Tipo</th>
-                        <th>Quantità</th>
-                        <th>Prezzo</th>
-                        <th>Totale</th>
-                        <th>Azioni</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for transaction in asset.transactions %}
-                        <tr>
-                            <td>{{ transaction.date }}</td>
-                            <td>
-                                {% if transaction.type == 'buy' %}
-                                    <span style="color: #10b981;"><i class="fas fa-arrow-up"></i> Acquisto</span>
-                                {% else %}
-                                    <span style="color: #ef4444;"><i class="fas fa-arrow-down"></i> Vendita</span>
+                    <div class="asset-card slide-in">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                            <h3>
+                                <i class="fas fa-chart-bar"></i> {{ asset.name }} ({{ asset.symbol }})
+                                {% if asset.type %}
+                                    <span class="asset-type">{{ asset.type }}</span>
                                 {% endif %}
-                            </td>
-                            <td>{{ transaction.quantity }}</td>
-                            <td>€ {{ "%.2f"|format(transaction.price) }}</td>
-                            <td>€ {{ "%.2f"|format(transaction.quantity * transaction.price) }}</td>
-                            <td>
-                                <button class="btn btn-danger btn-icon delete-transaction-btn" 
-                                       data-symbol="{{ asset.symbol }}" 
-                                       data-date="{{ transaction.date }}" 
-                                       data-type="{{ transaction.type }}" 
-                                       data-quantity="{{ transaction.quantity }}" 
-                                       data-price="{{ transaction.price }}">
-                                    <i class="fas fa-trash"></i>
-                                </button>
-                            </td>
-                        </tr>
+                            </h3>
+                            <button class="btn btn-danger btn-icon delete-asset-btn" data-symbol="{{ asset.symbol }}">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                        
+                        <div class="asset-summary">
+                            <p class="current-price">
+                                Prezzo attuale: {{ asset.currency|default('USD') }} <span class="price-value">{{ asset.current_price|default(0)|round(2) }}</span>
+                            </p>
+                                
+                            <!-- Sostituire il div asset-performance esistente con questo codice aggiornato -->
+                            <div class="asset-performance" id="performance-{{ asset.symbol|replace('.', '_') }}">
+                                <div class="asset-performance-grid">
+                                    <div class="asset-performance-item">
+                                        <span class="label">Quantità</span>
+                                        <span class="value net-quantity">0</span>
+                                    </div>
+                                    <div class="asset-performance-item">
+                                        <span class="label">Costo Medio</span>
+                                        <span class="value avg-cost">€ 0,00</span>
+                                    </div>
+                                    <div class="asset-performance-item">
+                                        <span class="label">Valore Attuale</span>
+                                        <span class="value current-value">€ 0,00</span>
+                                    </div>
+                                    <div class="asset-performance-item">
+                                        <span class="label">P/L</span>
+                                        <span class="value pl-value">€ 0,00 (0,00%)</span>
+                                    </div>
+                                </div>
+                                
+                                <h5 class="performance-title">Variazioni</h5>
+                                <div class="asset-performance-grid">
+                                    <div class="asset-performance-item">
+                                        <span class="label">Oggi</span>
+                                        <span class="value daily-change">0,00%</span>
+                                    </div>
+                                    <div class="asset-performance-item">
+                                        <span class="label">7 Giorni</span>
+                                        <span class="value weekly-change">0,00%</span>
+                                    </div>
+                                    <div class="asset-performance-item">
+                                        <span class="label">30 Giorni</span>
+                                        <span class="value monthly-change">0,00%</span>
+                                    </div>
+                                    <div class="asset-performance-item">
+                                        <span class="label">YTD</span>
+                                        <span class="value ytd-change">0,00%</span>
+                                    </div>
+                                    <div class="asset-performance-item">
+                                        <span class="label">3 Anni</span>
+                                        <span class="value three-year-change">N/A</span>
+                                    </div>
+                                    <div class="asset-performance-item">
+                                        <span class="label">5 Anni</span>
+                                        <span class="value five-year-change">N/A</span>
+                                    </div>
+                                    <div class="asset-performance-item">
+                                        <span class="label">10 Anni</span>
+                                        <span class="value ten-year-change">N/A</span>
+                                    </div>
+                                    <div class="asset-performance-item">
+                                        <span class="label">Dall'inizio</span>
+                                        <span class="value since-inception-change">0,00%</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                        </div>
+                        
+                        <h4><i class="fas fa-exchange-alt"></i> Transazioni</h4>
+                        
+                        {% if asset.transactions %}
+                            <table class="transactions-table">
+                                <thead>
+                                    <tr>
+                                        <th>Data</th>
+                                        <th>Tipo</th>
+                                        <th>Quantità</th>
+                                        <th>Prezzo</th>
+                                        <th>Commissione</th>
+                                        <th>Totale</th>
+                                        <th>Note</th>
+                                        <th>Azioni</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for transaction in asset.transactions|sort(attribute='date', reverse=true) %}
+                                        <tr>
+                                            <td>{{ transaction.date }}</td>
+                                            <td>
+                                                {% if transaction.type == 'buy' %}
+                                                    <span style="color: #10b981;"><i class="fas fa-arrow-up"></i> Acquisto</span>
+                                                {% else %}
+                                                    <span style="color: #ef4444;"><i class="fas fa-arrow-down"></i> Vendita</span>
+                                                {% endif %}
+                                            </td>
+                                            <td>{{ transaction.quantity }}</td>
+                                            <td>€ {{ "%.2f"|format(transaction.price) }}</td>
+                                            <td>{% if transaction.fee|default(0) > 0 %}€ {{ "%.2f"|format(transaction.fee) }}{% else %}-{% endif %}</td>
+                                            <td>€ {{ "%.2f"|format(transaction.quantity * transaction.price) }}</td>
+                                            <td>{% if transaction.notes|default('') %}{{ transaction.notes }}{% else %}-{% endif %}</td>
+                                            <td>
+                                                <button class="btn btn-danger btn-icon delete-transaction-btn" 
+                                                      data-symbol="{{ asset.symbol }}" 
+                                                      data-date="{{ transaction.date }}" 
+                                                      data-type="{{ transaction.type }}" 
+                                                      data-quantity="{{ transaction.quantity }}" 
+                                                      data-price="{{ transaction.price }}"
+                                                      {% if transaction.fee|default(0) > 0 %}data-fee="{{ transaction.fee }}"{% endif %}>
+                                                    <i class="fas fa-trash"></i>
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        {% else %}
+                            <p>Nessuna transazione registrata.</p>
+                        {% endif %}
+                        
+                        <button class="btn add-transaction-btn" data-symbol="{{ asset.symbol }}">
+                            <i class="fas fa-plus"></i> Aggiungi Transazione
+                        </button>
+                    </div>
                     {% endfor %}
-                </tbody>
-            </table>
-        {% else %}
-            <p>Nessuna transazione registrata.</p>
-        {% endif %}
-        
-        <button class="btn add-transaction-btn" data-symbol="{{ asset.symbol }}">
-            <i class="fas fa-plus"></i> Aggiungi Transazione
-        </button>
-    </div>
-{% endfor %}
                 </div>
             {% else %}
                 <div class="no-assets">
@@ -300,8 +306,84 @@
                            min="0.01" step="0.01" required>
                 </div>
                 
+                <div class="input-group">
+                    <label for="transactionFee">
+                        <i class="fas fa-money-bill-wave"></i> Commissione (opzionale)
+                    </label>
+                    <input type="number" id="transactionFee" name="fee" 
+                           min="0" step="0.01" placeholder="Lascia vuoto se non ci sono commissioni">
+                </div>
+                
+                <div class="input-group">
+                    <label for="transactionNotes">
+                        <i class="fas fa-sticky-note"></i> Note (opzionale)
+                    </label>
+                    <textarea id="transactionNotes" name="notes" placeholder="Aggiungi note sulla transazione"></textarea>
+                </div>
+                
                 <button type="submit" class="btn">
                     <i class="fas fa-plus"></i> Aggiungi Transazione
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal per importare le transazioni da CSV -->
+    <div id="csvUploadModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2><i class="fas fa-file-csv"></i> Importa Transazioni da CSV</h2>
+            
+            <div class="info-box">
+                <p><i class="fas fa-info-circle"></i> Il file CSV deve contenere le seguenti colonne:</p>
+                <ul>
+                    <li><strong>date</strong>: Data della transazione (YYYY-MM-DD)</li>
+                    <li><strong>type</strong>: Tipo di transazione (buy o sell)</li>
+                    <li><strong>quantity</strong>: Quantità</li>
+                    <li><strong>price</strong>: Prezzo unitario</li>
+                    <li><strong>fee</strong>: Commissione (opzionale)</li>
+                    <li><strong>notes</strong>: Note (opzionale)</li>
+                </ul>
+            </div>
+            
+            <div class="template-download">
+                <p><i class="fas fa-download"></i> <a href="#" id="downloadCsvTemplate">Scarica modello CSV</a></p>
+            </div>
+            
+            <form id="csvUploadForm" action="" method="post" enctype="multipart/form-data">
+                <div class="input-group">
+                    <label for="csvFile">
+                        <i class="fas fa-file-upload"></i> File CSV
+                    </label>
+                    <input type="file" id="csvFile" name="csvFile" accept=".csv" required>
+                </div>
+                
+                <div class="input-group">
+                    <label><i class="fas fa-cog"></i> Separatore CSV</label>
+                    <div class="radio-group">
+                        <label>
+                            <input type="radio" name="separator" value="comma" checked> Virgola (,)
+                        </label>
+                        <label>
+                            <input type="radio" name="separator" value="semicolon"> Punto e virgola (;)
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="input-group">
+                    <label><i class="fas fa-calendar"></i> Formato data</label>
+                    <div class="radio-group">
+                        <label>
+                            <input type="radio" name="date_format" value="iso" checked> ISO (YYYY-MM-DD)
+                        </label>
+                        <label>
+                            <input type="radio" name="date_format" value="euro"> Europeo (DD/MM/YYYY)
+                        </label>
+                    </div>
+                </div>
+                
+                <button type="submit" class="btn" id="importCsvBtn">
+                    <i class="fas fa-upload"></i> Importa Transazioni
                 </button>
             </form>
         </div>

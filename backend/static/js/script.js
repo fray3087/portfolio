@@ -472,4 +472,101 @@ function updatePerformancePeriods(portfolioId) {
             console.error(`Errore nel recupero dei dati di performance per ${period}:`, error);
         });
     });
+
+    
+// Da aggiungere a script.js
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Ottieni riferimenti agli elementi della pagina
+    const csvUploadModal = document.getElementById('csvUploadModal');
+    const csvUploadBtn = document.getElementById('csvUploadBtn');
+    
+    // Aggiungi event listener per aprire il modale di upload CSV
+    if (csvUploadBtn) {
+        csvUploadBtn.addEventListener('click', function() {
+            csvUploadModal.classList.add('active');
+        });
+    }
+    
+    // Aggiorna il gestore di chiusura per includere il nuovo modale
+    const closeBtns = document.querySelectorAll('.close');
+    closeBtns.forEach(btn => {
+        btn.addEventListener('click', function() {
+            if (this.closest('.modal')) {
+                this.closest('.modal').classList.remove('active');
+            }
+        });
+    });
+    
+    // Chiudi i modali quando si clicca all'esterno
+    window.addEventListener('click', function(event) {
+        if (event.target.classList.contains('modal')) {
+            event.target.classList.remove('active');
+        }
+    });
+    
+    // Gestisci l'invio del form CSV
+    const csvUploadForm = document.getElementById('csvUploadForm');
+    if (csvUploadForm) {
+        csvUploadForm.addEventListener('submit', function(e) {
+            // Ottieni l'asset selezionato
+            // In una pagina di asset specifico, useremo il simbolo dalla URL
+            // In una pagina portfolio, chiederemo all'utente di selezionare un asset
+            const assetSelector = document.getElementById('assetSelector');
+            let symbol;
+            
+            if (assetSelector) {
+                // Siamo nella pagina del portfolio generale
+                symbol = assetSelector.value;
+                if (!symbol) {
+                    e.preventDefault();
+                    alert('Seleziona uno strumento prima di caricare il CSV');
+                    return;
+                }
+            } else {
+                // Siamo nella pagina di un asset specifico
+                // Ottieni il simbolo dall'URL o da altro elemento della pagina
+                const addTransactionBtn = document.querySelector('.add-transaction-btn');
+                if (addTransactionBtn) {
+                    symbol = addTransactionBtn.dataset.symbol;
+                }
+                
+                if (!symbol) {
+                    e.preventDefault();
+                    alert('Impossibile determinare lo strumento per l\'importazione');
+                    return;
+                }
+            }
+            
+            // Imposta l'URL di destinazione
+            const portfolioId = window.location.pathname.split('/')[2];
+            csvUploadForm.action = `/portfolios/${portfolioId}/assets/${symbol}/import_csv`;
+            
+            // Continua con il submit
+            // Il form ha già enctype="multipart/form-data" quindi i file verranno inviati correttamente
+        });
+    }
+    
+    // Se siamo nella pagina principale del portfolio, aggiungiamo un selettore di asset
+    if (csvUploadForm && !document.querySelector('.add-transaction-btn')) {
+        // Crea un selettore di asset
+        const inputGroup = document.createElement('div');
+        inputGroup.className = 'input-group';
+        inputGroup.innerHTML = `
+            <label for="assetSelector">Seleziona Strumento</label>
+            <select id="assetSelector" name="asset" required>
+                <option value="">-- Seleziona uno strumento --</option>
+                ${Array.from(document.querySelectorAll('.asset-card h3')).map(el => {
+                    const symbol = el.closest('.asset-card').querySelector('.delete-asset-btn').dataset.symbol;
+                    return `<option value="${symbol}">${el.textContent}</option>`;
+                }).join('')}
+            </select>
+        `;
+        
+        // Inserisci il selettore all'inizio del form
+        csvUploadForm.insertBefore(inputGroup, csvUploadForm.firstChild);
+    }
+});
+
+
 }

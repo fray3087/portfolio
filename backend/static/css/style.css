@@ -1156,3 +1156,63 @@ table tr:hover {
 .btn {
     white-space: nowrap;  /* Evita che il testo vada a capo all'interno del pulsante */
 }
+
+/* Stili per l'header con azioni */
+.header-actions {
+    display: flex;
+    gap: 10px;
+}
+
+/* Stili per il box informativo */
+.info-box {
+    background-color: #f0f9ff;
+    border-left: 4px solid #3a86ff;
+    padding: 15px;
+    margin-bottom: 20px;
+    border-radius: 8px;
+}
+
+.info-box p {
+    margin-bottom: 10px;
+    color: #334155;
+    font-weight: 500;
+}
+
+.info-box ul {
+    padding-left: 20px;
+}
+
+.info-box li {
+    margin-bottom: 5px;
+    color: #64748b;
+}
+
+/* Stili per il link di download del template */
+.template-download {
+    margin-bottom: 20px;
+    font-size: 14px;
+}
+
+.template-download a {
+    color: var(--primary);
+    text-decoration: none;
+}
+
+.template-download a:hover {
+    text-decoration: underline;
+}
+
+/* Stili per i radio button */
+.radio-group {
+    display: flex;
+    gap: 15px;
+    margin-top: 5px;
+}
+
+.radio-group label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-weight: normal;
+    cursor: pointer;
+}

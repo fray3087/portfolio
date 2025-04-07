@@ -11,6 +11,8 @@ from scipy import stats
 from functools import lru_cache
 import hashlib
 import time
+import csv
+import io
 
 # Dizionario per memorizzare i risultati del cache con una scadenza
 performance_cache = {}
@@ -613,6 +615,16 @@ def add_transaction(portfolio_id, symbol):
     price = float(data.get('price'))
     date = data.get('date')
     
+    # Gestione dei nuovi campi opzionali
+    fee = 0.0
+    notes = ""
+    
+    if data.get('fee') and data.get('fee').strip():
+        fee = float(data.get('fee'))
+    
+    if data.get('notes'):
+        notes = data.get('notes')
+    
     username = session['username']
     if portfolio_id not in users[username]['portfolios']:
         flash('Portfolio non trovato', 'error')
@@ -631,12 +643,14 @@ def add_transaction(portfolio_id, symbol):
         flash('Strumento non trovato nel portfolio', 'error')
         return redirect(url_for('portfolio_detail', portfolio_id=portfolio_id))
     
-    # Aggiungi la transazione
+    # Aggiungi la transazione con i nuovi campi
     asset['transactions'].append({
         'date': date,
         'type': transaction_type,
         'quantity': quantity,
-        'price': price
+        'price': price,
+        'fee': fee,
+        'notes': notes
     })
 
     # Salva immediatamente
@@ -725,20 +739,33 @@ def delete_transaction(portfolio_id, symbol):
     quantity = float(data.get('quantity'))
     price = float(data.get('price'))
     
+    # Opzionalmente controlla anche fee se presente
+    fee = data.get('fee', 0)
+    if fee:
+        fee = float(fee)
+    
     # Trova e rimuovi la transazione
     for i, transaction in enumerate(asset['transactions']):
+        # Verifica se i campi essenziali corrispondono
         if (transaction['date'] == date and 
             transaction['type'] == transaction_type and 
             abs(transaction['quantity'] - quantity) < 0.001 and 
             abs(transaction['price'] - price) < 0.001):
+            
+            # Se fee è specificato nel payload, verifica anche quello
+            if fee > 0 and 'fee' in transaction:
+                if abs(transaction['fee'] - fee) > 0.001:
+                    continue  # Non corrisponde, passa alla prossima transazione
+            
+            # Rimuovi la transazione
             asset['transactions'].pop(i)
-
+            
             # Salva immediatamente
             save_users(users)
-
+            
             # Cancella la cache per questo portfolio
             clear_portfolio_cache(portfolio_id)
-
+            
             return jsonify({'success': True})
     
     return jsonify({'error': 'Transazione non trovata'}), 404
@@ -2081,6 +2108,190 @@ def run_stress_test(portfolio_id):
     }
     
     return jsonify(result)
+
+
+@app.route('/portfolios/<portfolio_id>/assets/<symbol>/import_csv', methods=['POST'])
+def import_csv_transactions(portfolio_id, symbol):
+    if 'username' not in session:
+        return jsonify({'error': 'Non autorizzato'}), 401
+    
+    username = session['username']
+    if portfolio_id not in users[username]['portfolios']:
+        flash('Portfolio non trovato', 'error')
+        return redirect(url_for('portfolios'))
+    
+    portfolio = users[username]['portfolios'][portfolio_id]
+    
+    # Trova lo strumento nel portfolio
+    asset = None
+    for a in portfolio['assets']:
+        if a['symbol'] == symbol:
+            asset = a
+            break
+    
+    if not asset:
+        flash('Strumento non trovato nel portfolio', 'error')
+        return redirect(url_for('portfolio_detail', portfolio_id=portfolio_id))
+    
+    # Controlla se è stato inviato un file
+    if 'csvFile' not in request.files:
+        flash('Nessun file selezionato', 'error')
+        return redirect(url_for('portfolio_detail', portfolio_id=portfolio_id))
+    
+    file = request.files['csvFile']
+    
+    if file.filename == '':
+        flash('Nessun file selezionato', 'error')
+        return redirect(url_for('portfolio_detail', portfolio_id=portfolio_id))
+    
+    if not file.filename.endswith('.csv'):
+        flash('Il file deve essere in formato CSV', 'error')
+        return redirect(url_for('portfolio_detail', portfolio_id=portfolio_id))
+    
+    # Determina il separatore
+    separator = ',' if request.form.get('separator') == 'comma' else ';'
+    
+    # Determina il formato della data
+    date_format = '%Y-%m-%d' if request.form.get('date_format') == 'iso' else '%d/%m/%Y'
+    
+    try:
+        # Leggi il file CSV
+        stream = io.StringIO(file.stream.read().decode("UTF8"), newline='')
+        csv_reader = csv.DictReader(stream, delimiter=separator)
+        
+        # Verifica che le colonne richieste siano presenti
+        required_fields = ['date', 'type', 'quantity', 'price']
+        
+        # Ottieni i nomi delle colonne dal reader (adattando i nomi se necessario)
+        fieldnames = [field.strip().lower() for field in csv_reader.fieldnames]
+        
+        # Crea una mappatura per i nomi delle colonne
+        field_mapping = {}
+        for req_field in required_fields:
+            # Cerca corrispondenze esatte o parziali
+            if req_field in fieldnames:
+                field_mapping[req_field] = req_field
+            else:
+                # Cerca corrispondenze parziali (es. "Data" per "date")
+                for field in fieldnames:
+                    if req_field in field or field in req_field:
+                        field_mapping[req_field] = field
+                        break
+        
+        # Verifica che tutte le colonne richieste siano mappate
+        missing_fields = [field for field in required_fields if field not in field_mapping]
+        if missing_fields:
+            flash(f"Colonne mancanti nel CSV: {', '.join(missing_fields)}", 'error')
+            return redirect(url_for('portfolio_detail', portfolio_id=portfolio_id))
+        
+        # Elabora le righe
+        imported_count = 0
+        errors = []
+        
+        # Reset the stream
+        stream.seek(0)
+        next(csv_reader)  # Skip header
+        
+        for i, row in enumerate(csv_reader, start=2):  # Start from 2 to account for header
+            try:
+                # Usa la mappatura per ottenere i valori corretti
+                date_str = row[field_mapping['date']].strip()
+                type_str = row[field_mapping['type']].strip().lower()
+                quantity_str = row[field_mapping['quantity']].strip().replace(',', '.')
+                price_str = row[field_mapping['price']].strip().replace(',', '.')
+                
+                # Opzionali
+                fee_str = row.get(field_mapping.get('fee', 'fee'), '0').strip().replace(',', '.')
+                notes = row.get(field_mapping.get('notes', 'notes'), '').strip()
+                
+                # Convalida e conversione dei dati
+                # Data
+                try:
+                    date_obj = datetime.strptime(date_str, date_format)
+                    date_formatted = date_obj.strftime('%Y-%m-%d')
+                except ValueError:
+                    errors.append(f"Riga {i}: Formato data non valido '{date_str}'")
+                    continue
+                
+                # Tipo
+                if type_str not in ['buy', 'sell', 'acquisto', 'vendita']:
+                    errors.append(f"Riga {i}: Tipo non valido '{type_str}'. Deve essere 'buy' o 'sell'")
+                    continue
+                
+                # Converti 'acquisto'/'vendita' in 'buy'/'sell'
+                if type_str == 'acquisto':
+                    type_str = 'buy'
+                elif type_str == 'vendita':
+                    type_str = 'sell'
+                
+                # Quantità
+                try:
+                    quantity = float(quantity_str)
+                    if quantity <= 0:
+                        errors.append(f"Riga {i}: La quantità deve essere maggiore di zero")
+                        continue
+                except ValueError:
+                    errors.append(f"Riga {i}: Quantità non valida '{quantity_str}'")
+                    continue
+                
+                # Prezzo
+                try:
+                    price = float(price_str)
+                    if price < 0:
+                        errors.append(f"Riga {i}: Il prezzo non può essere negativo")
+                        continue
+                except ValueError:
+                    errors.append(f"Riga {i}: Prezzo non valido '{price_str}'")
+                    continue
+                
+                # Commissione (opzionale)
+                fee = 0.0
+                if fee_str:
+                    try:
+                        fee = float(fee_str)
+                        if fee < 0:
+                            errors.append(f"Riga {i}: La commissione non può essere negativa")
+                            continue
+                    except ValueError:
+                        errors.append(f"Riga {i}: Commissione non valida '{fee_str}'")
+                        continue
+                
+                # Aggiungi la transazione
+                asset['transactions'].append({
+                    'date': date_formatted,
+                    'type': type_str,
+                    'quantity': quantity,
+                    'price': price,
+                    'fee': fee,
+                    'notes': notes
+                })
+                
+                imported_count += 1
+                
+            except Exception as e:
+                errors.append(f"Riga {i}: Errore generico - {str(e)}")
+        
+        # Salva le modifiche
+        save_users(users)
+        
+        # Cancella la cache
+        clear_portfolio_cache(portfolio_id)
+        
+        # Messaggi di successo/errore
+        if imported_count > 0:
+            flash(f"Importate con successo {imported_count} transazioni", 'success')
+        
+        if errors:
+            error_message = "Errori durante l'importazione:<br>" + "<br>".join(errors[:10])
+            if len(errors) > 10:
+                error_message += f"<br>...e altri {len(errors) - 10} errori"
+            flash(error_message, 'error')
+        
+        return redirect(url_for('portfolio_detail', portfolio_id=portfolio_id))
+        
+    except Exception as e:
+        flash(f"Errore nell'elaborazione del file CSV: {str(e)}", 'error')
+        return redirect(url_for('portfolio_detail', portfolio_id=portfolio_id))    
 
 
 if __name__ == '__main__':
