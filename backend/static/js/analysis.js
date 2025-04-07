@@ -60,55 +60,79 @@ document.addEventListener('DOMContentLoaded', function() {
      * Carica i dati per i grafici e le metriche
      */
     function loadChartData(period) {
-        // 1. Carica dati delle performance (grafico principale)
-        fetch(`/api/portfolios/${portfolioId}/performance-data?period=${period}`)
-            .then(response => response.json())
-            .then(data => {
-                updatePerformanceChart(data);
-                updateMetrics(data);
-            })
-            .catch(error => console.error('Errore nel caricamento dei dati di performance:', error));
+        // Mostra gli indicatori di caricamento
+        showLoadingSpinners();
         
-        // 2. Carica dati di drawdown
-        fetch(`/api/portfolios/${portfolioId}/drawdown-data?period=${period}`)
+        // Usa un'unica API consolidata
+        fetch(`/api/portfolios/${portfolioId}/analysis-data?period=${period}`)
             .then(response => response.json())
             .then(data => {
-                updateDrawdownChart(data);
-                updateDrawdownMetrics(data);
+                // Nascondi gli indicatori di caricamento
+                hideLoadingSpinners();
+                
+                // Aggiorna tutti i grafici con i dati ricevuti
+                updatePerformanceChart(data.performance);
+                updateMetrics(data.performance);
+                updateDrawdownChart(data.drawdown);
+                updateDrawdownMetrics(data.drawdown);
+                updateAllocationChart(data.allocation);
+                updateRiskReturnChart(data.riskReturn);
+                updateReturnsDistributionChart(data.returnsDistribution);
+                updateCorrelationChart(data.correlation);
             })
-            .catch(error => console.error('Errore nel caricamento dei dati di drawdown:', error));
+            .catch(error => {
+                console.error('Errore nel caricamento dei dati:', error);
+                hideLoadingSpinners();
+                showErrorMessage();
+            });
+    }
+    
+    /**
+     * Mostra indicatori di caricamento
+     */
+    function showLoadingSpinners() {
+        // Aggiungi spinner a tutti i contenitori dei grafici
+        document.querySelectorAll('.chart-container').forEach(container => {
+            const spinner = document.createElement('div');
+            spinner.className = 'loading-spinner';
+            spinner.innerHTML = '<i class="fas fa-spinner fa-spin"></i><p>Caricamento dati...</p>';
+            container.appendChild(spinner);
+        });
         
-        // 3. Carica dati di allocazione
-        fetch(`/api/portfolios/${portfolioId}/allocation-data`)
-            .then(response => response.json())
-            .then(data => {
-                updateAllocationChart(data);
-            })
-            .catch(error => console.error('Errore nel caricamento dei dati di allocazione:', error));
+        // Disabilita i pulsanti di periodo durante il caricamento
+        document.querySelectorAll('.period-btn').forEach(btn => {
+            btn.disabled = true;
+        });
+    }
+    
+    /**
+     * Nasconde indicatori di caricamento
+     */
+    function hideLoadingSpinners() {
+        // Rimuovi tutti gli spinner
+        document.querySelectorAll('.loading-spinner').forEach(spinner => {
+            spinner.remove();
+        });
         
-        // 4. Carica dati rischio/rendimento
-        fetch(`/api/portfolios/${portfolioId}/risk-return-data?period=${period}`)
-            .then(response => response.json())
-            .then(data => {
-                updateRiskReturnChart(data);
-            })
-            .catch(error => console.error('Errore nel caricamento dei dati di rischio/rendimento:', error));
-        
-        // 5. Carica dati distribuzione rendimenti
-        fetch(`/api/portfolios/${portfolioId}/returns-distribution?period=${period}`)
-            .then(response => response.json())
-            .then(data => {
-                updateReturnsDistributionChart(data);
-            })
-            .catch(error => console.error('Errore nel caricamento della distribuzione dei rendimenti:', error));
-        
-        // 6. Carica dati correlazione
-        fetch(`/api/portfolios/${portfolioId}/correlation-data?period=${period}`)
-            .then(response => response.json())
-            .then(data => {
-                updateCorrelationChart(data);
-            })
-            .catch(error => console.error('Errore nel caricamento dei dati di correlazione:', error));
+        // Riabilita i pulsanti
+        document.querySelectorAll('.period-btn').forEach(btn => {
+            btn.disabled = false;
+        });
+    }
+    
+    /**
+     * Mostra un messaggio di errore
+     */
+    function showErrorMessage() {
+        // Mostra un messaggio di errore
+        document.querySelectorAll('.chart-container').forEach(container => {
+            if (!container.querySelector('.error-message')) {
+                const errorMsg = document.createElement('div');
+                errorMsg.className = 'error-message';
+                errorMsg.innerHTML = '<p>Errore nel caricamento dei dati. Riprova più tardi.</p>';
+                container.appendChild(errorMsg);
+            }
+        });
     }
     
     /**
@@ -204,7 +228,10 @@ document.addEventListener('DOMContentLoaded', function() {
      * Aggiorna il grafico delle performance con nuovi dati
      */
     function updatePerformanceChart(data) {
-        if (!performanceChart) return;
+        if (!performanceChart) {
+            console.error('performanceChart non inizializzato');
+            return;
+        }
         
         performanceChart.data.labels = data.dates;
         performanceChart.data.datasets[0].data = data.portfolioValues;
@@ -265,9 +292,6 @@ document.addEventListener('DOMContentLoaded', function() {
         updateMetricValue('avgDrawdownDuration', data.metrics.avgDrawdownDuration, ' giorni');
         updateMetricValue('avgRecoveryTime', data.metrics.avgRecoveryTime, ' giorni');
         updateMetricValue('currentDrawdown', data.metrics.currentDrawdown, '%');
-        
-        // Inizializza o aggiorna il grafico di drawdown
-        updateDrawdownChart(data);
     }
     
     /**
@@ -545,28 +569,91 @@ document.addEventListener('DOMContentLoaded', function() {
     function updateCorrelationChart(data) {
         const ctx = document.getElementById('correlationChart').getContext('2d');
         
+        // Aggiungi questo controllo
+        if (!ctx) {
+            console.error('Elemento correlationChart non trovato nel DOM');
+            return;
+        }
+
+
         // Se il grafico esiste già, distruggilo per ricrearlo
         if (correlationChart) {
             correlationChart.destroy();
         }
         
-        // Crea un dataset con i dati della matrice di correlazione
-        const datasets = data.labels.map((label, i) => {
-            return {
-                label: label,
-                data: data.correlationMatrix[i],
-                backgroundColor: function(context) {
-                    const value = context.dataset.data[context.dataIndex];
-                    // Scala di colori da rosso (correlazione negativa) a blu (correlazione positiva)
-                    if (value < 0) {
-                        return `rgba(239, 68, 68, ${Math.abs(value)})`;
-                    } else {
-                        return `rgba(58, 134, 255, ${value})`;
+        // Gestione speciale per pochi asset (1 o 2)
+        if (data.labels.length <= 2) {
+            if (data.labels.length === 0) {
+                // Nessun asset con dati sufficienti
+                document.getElementById('correlationChart').parentNode.innerHTML = 
+                    '<p class="text-center text-muted">Dati insufficienti per la correlazione.</p>';
+                return;
+            } else if (data.labels.length === 1) {
+                // Un solo asset - mostra messaggio esplicativo
+                document.getElementById('correlationChart').parentNode.innerHTML = 
+                    '<p class="text-center text-muted">È necessario avere almeno due asset per calcolare la correlazione.</p>';
+                return;
+            } else {
+                // Due asset - mostra una visualizzazione semplificata
+                const correlation = data.correlationValues[1].v; // Il valore di correlazione tra i due asset
+                
+                correlationChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: [`Correlazione tra ${data.labels[0]} e ${data.labels[1]}`],
+                        datasets: [{
+                            label: 'Coefficiente di Correlazione',
+                            data: [correlation],
+                            backgroundColor: correlation > 0 ? 
+                                `rgba(58, 134, 255, ${Math.abs(correlation)})` : 
+                                `rgba(239, 68, 68, ${Math.abs(correlation)})`,
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        indexAxis: 'y',
+                        scales: {
+                            x: {
+                                min: -1,
+                                max: 1,
+                                grid: {
+                                    display: true
+                                },
+                                ticks: {
+                                    callback: function(value) {
+                                        return value.toFixed(1);
+                                    }
+                                }
+                            }
+                        },
+                        plugins: {
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        const value = context.raw;
+                                        let correlation = "Nessuna correlazione";
+                                        
+                                        if (value > 0.7) correlation = "Forte correlazione positiva";
+                                        else if (value > 0.3) correlation = "Correlazione positiva moderata";
+                                        else if (value > 0) correlation = "Debole correlazione positiva";
+                                        else if (value > -0.3) correlation = "Debole correlazione negativa";
+                                        else if (value > -0.7) correlation = "Correlazione negativa moderata";
+                                        else correlation = "Forte correlazione negativa";
+                                        
+                                        return [`Valore: ${value.toFixed(2)}`, correlation];
+                                    }
+                                }
+                            }
+                        }
                     }
-                }
-            };
-        });
+                });
+                return;
+            }
+        }
         
+        // Per 3+ asset, usa la visualizzazione della matrice originale
         correlationChart = new Chart(ctx, {
             type: 'matrix',
             data: {
@@ -669,87 +756,29 @@ document.addEventListener('DOMContentLoaded', function() {
         
         return colors;
     }
-// Nel file analysis.js
-
-function loadChartData(period) {
-    // Mostra gli indicatori di caricamento
-    showLoadingSpinners();
     
-    // Usa un'unica API consolidata
-    fetch(`/api/portfolios/${portfolioId}/analysis-data?period=${period}`)
-        .then(response => response.json())
-        .then(data => {
-            // Nascondi gli indicatori di caricamento
-            hideLoadingSpinners();
-            
-            // Aggiorna tutti i grafici con i dati ricevuti
-            updatePerformanceChart(data.performance);
-            updateMetrics(data.performance);
-            updateDrawdownChart(data.drawdown);
-            updateDrawdownMetrics(data.drawdown);
-            updateAllocationChart(data.allocation);
-            updateRiskReturnChart(data.riskReturn);
-            updateReturnsDistributionChart(data.returnsDistribution);
-            updateCorrelationChart(data.correlation);
-        })
-        .catch(error => {
-            console.error('Errore nel caricamento dei dati:', error);
-            hideLoadingSpinners();
-            showErrorMessage();
+    /**
+     * Precaricare i dati per i periodi più comuni
+     */
+    function precacheData() {
+        const periodsToCache = ['1m', '3m', 'ytd'];
+        
+        // Carica in background i dati per i periodi più usati
+        periodsToCache.forEach(period => {
+            if (period !== currentPeriod) { // Non caricare quello già caricato
+                fetch(`/api/portfolios/${portfolioId}/analysis-data?period=${period}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        cachedData[period] = data;
+                        console.log(`Dati precached per il periodo ${period}`);
+                    })
+                    .catch(error => {
+                        console.error(`Errore nel precache per ${period}:`, error);
+                    });
+            }
         });
-}
-
-function showLoadingSpinners() {
-    // Aggiungi spinner a tutti i contenitori dei grafici
-    document.querySelectorAll('.chart-container').forEach(container => {
-        const spinner = document.createElement('div');
-        spinner.className = 'loading-spinner';
-        spinner.innerHTML = '<i class="fas fa-spinner fa-spin"></i><p>Caricamento dati...</p>';
-        container.appendChild(spinner);
-    });
+    }
     
-    // Disabilita i pulsanti di periodo durante il caricamento
-    document.querySelectorAll('.period-btn').forEach(btn => {
-        btn.disabled = true;
-    });
-}
-
-function hideLoadingSpinners() {
-    // Rimuovi tutti gli spinner
-    document.querySelectorAll('.loading-spinner').forEach(spinner => {
-        spinner.remove();
-    });
-    
-    // Riabilita i pulsanti
-    document.querySelectorAll('.period-btn').forEach(btn => {
-        btn.disabled = false;
-    });
-}
-
-/**
- * Precaricare i dati per i periodi più comuni
- */
-function precacheData() {
-    const periodsToCache = ['1m', '3m', 'ytd'];
-    
-    // Carica in background i dati per i periodi più usati
-    periodsToCache.forEach(period => {
-        if (period !== currentPeriod) { // Non caricare quello già caricato
-            fetch(`/api/portfolios/${portfolioId}/analysis-data?period=${period}`)
-                .then(response => response.json())
-                .then(data => {
-                    cachedData[period] = data;
-                    console.log(`Dati precached per il periodo ${period}`);
-                })
-                .catch(error => {
-                    console.error(`Errore nel precache per ${period}:`, error);
-                });
-        }
-    });
-}
-
-// Avvia il precaching dopo il caricamento iniziale
-setTimeout(precacheData, 3000);
-
-// Questa è la parentesi di chiusura del document.addEventListener
+    // Avvia il precaching dopo il caricamento iniziale
+    setTimeout(precacheData, 3000);
 });

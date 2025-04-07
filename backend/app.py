@@ -37,6 +37,18 @@ def get_cached_result(portfolio_id, period, endpoint):
             return entry['data']
     return None
 
+def clear_portfolio_cache(portfolio_id):
+    """Cancella tutta la cache relativa a un determinato portfolio"""
+    keys_to_delete = []
+    for key in performance_cache.keys():
+        if key.startswith(f"{portfolio_id}_"):
+            keys_to_delete.append(key)
+    
+    for key in keys_to_delete:
+        del performance_cache[key]
+    
+    print(f"Cache cancellata per il portfolio {portfolio_id}")    
+
 
 def compute_all_returns(portfolio, start_date, end_date):
     """Calcola i rendimenti giornalieri per tutti gli asset una volta sola"""
@@ -84,7 +96,8 @@ def compute_all_returns(portfolio, start_date, end_date):
                 asset_returns[symbol] = {
                     'prices': [],
                     'quantities': [],
-                    'values': []
+                    'values': [],
+                    'returns': []  # Aggiungi questa chiave
                 }
             
             asset_returns[symbol]['prices'].append(asset_price)
@@ -110,14 +123,42 @@ def compute_all_returns(portfolio, start_date, end_date):
     
     # Calcola rendimenti per ogni asset
     for symbol in asset_returns:
-        asset_prices = asset_returns[symbol]['prices']
-        returns = []
-        for i in range(1, len(asset_prices)):
-            if asset_prices[i-1] > 0:
-                daily_return = (asset_prices[i] - asset_prices[i-1]) / asset_prices[i-1]
-            else:
-                daily_return = 0
-            returns.append(daily_return)
+        # Ottieni l'asset corrispondente
+        asset_obj = None
+        for asset in portfolio['assets']:
+            if asset['symbol'] == symbol:
+                asset_obj = asset
+                break
+        
+        # Se l'asset ha rendimenti storici precalcolati, usali
+        if asset_obj and 'historical_returns' in asset_obj:
+            # Recupera i rendimenti precalcolati per le date nel nostro periodo
+            returns = []
+            for i in range(1, len(dates)):
+                date_str = dates[i]
+                if date_str in asset_obj['historical_returns']:
+                    # Usa il rendimento precalcolato
+                    returns.append(asset_obj['historical_returns'][date_str])
+                else:
+                    # Altrimenti calcola il rendimento dai prezzi
+                    asset_prices = asset_returns[symbol]['prices']
+                    if i < len(asset_prices) and i-1 < len(asset_prices) and asset_prices[i-1] > 0:
+                        daily_return = (asset_prices[i] - asset_prices[i-1]) / asset_prices[i-1]
+                        returns.append(daily_return)
+                    else:
+                        returns.append(0)  # Fallback se non abbiamo i dati
+        else:
+            # Calcola i rendimenti dai prezzi come prima
+            asset_prices = asset_returns[symbol]['prices']
+            returns = []
+            for i in range(1, len(asset_prices)):
+                if asset_prices[i-1] > 0:
+                    daily_return = (asset_prices[i] - asset_prices[i-1]) / asset_prices[i-1]
+                else:
+                    daily_return = 0
+                returns.append(daily_return)
+        
+        # Assegna i rendimenti calcolati o recuperati
         asset_returns[symbol]['returns'] = returns
     
     return {
@@ -555,6 +596,9 @@ def add_asset(portfolio_id):
     
     # Salva immediatamente
     save_users(users)
+
+    # Cancella la cache per questo portfolio
+    clear_portfolio_cache(portfolio_id)
     
     return jsonify({'success': True})
 
@@ -597,6 +641,9 @@ def add_transaction(portfolio_id, symbol):
 
     # Salva immediatamente
     save_users(users)
+
+    # Cancella la cache per questo portfolio
+    clear_portfolio_cache(portfolio_id)
     
     flash('Transazione aggiunta con successo', 'success')
     return redirect(url_for('portfolio_detail', portfolio_id=portfolio_id))
@@ -644,6 +691,9 @@ def delete_asset(portfolio_id, symbol):
 
     # Salva immediatamente
     save_users(users)
+
+    # Cancella la cache per questo portfolio
+    clear_portfolio_cache(portfolio_id)
     
     return jsonify({'success': True})
 
@@ -685,6 +735,9 @@ def delete_transaction(portfolio_id, symbol):
 
             # Salva immediatamente
             save_users(users)
+
+            # Cancella la cache per questo portfolio
+            clear_portfolio_cache(portfolio_id)
 
             return jsonify({'success': True})
     
@@ -767,10 +820,29 @@ def update_prices(portfolio_id):
                 # Memorizza i prezzi storici
                 if 'historical_prices' not in asset:
                     asset['historical_prices'] = {}
+
+                # Memorizza anche i rendimenti storici
+                if 'historical_returns' not in asset:
+                    asset['historical_returns'] = {}
+                
+                # Processa i dati storici
+                prev_date = None
+                prev_price = None
                 
                 for date, row in hist.iterrows():
                     date_str = date.strftime('%Y-%m-%d')
-                    asset['historical_prices'][date_str] = row['Close']
+                    price = row['Close']
+
+                    # Salva il prezzo
+                    asset['historical_prices'][date_str] = price
+
+                    # Calcola e salva il rendimento giornaliero se abbiamo un prezzo precedente
+                    if prev_price is not None and prev_price > 0:
+                        daily_return = (price - prev_price) / prev_price
+                        asset['historical_returns'][date_str] = daily_return
+                    
+                    prev_date = date_str
+                    prev_price = price
                 
                 try:
                     # Trova il prezzo più vicino per diverse date di riferimento
@@ -853,6 +925,9 @@ def update_prices(portfolio_id):
     
     # Salva gli utenti dopo l'aggiornamento
     save_users(users)
+
+    # Cancella la cache per questo portfolio
+    clear_portfolio_cache(portfolio_id)
     
     print(f"Dati aggiornati per il portfolio {portfolio_id}:")
     for data in updated_data:
