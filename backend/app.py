@@ -2112,6 +2112,12 @@ def run_stress_test(portfolio_id):
 
 @app.route('/portfolios/<portfolio_id>/assets/<symbol>/import_csv', methods=['POST'])
 def import_csv_transactions(portfolio_id, symbol):
+    print("Importazione CSV ricevuta")
+    print("Portfolio ID:", portfolio_id)
+    print("Symbol:", symbol)
+    
+    # Resto del codice come nella versione precedente
+    ...
     if 'username' not in session:
         return jsonify({'error': 'Non autorizzato'}), 401
     
@@ -2291,7 +2297,33 @@ def import_csv_transactions(portfolio_id, symbol):
         
     except Exception as e:
         flash(f"Errore nell'elaborazione del file CSV: {str(e)}", 'error')
-        return redirect(url_for('portfolio_detail', portfolio_id=portfolio_id))    
+        return redirect(url_for('portfolio_detail', portfolio_id=portfolio_id))   
+
+
+@app.route('/download_csv_template')
+def download_csv_template():
+    import io
+    import csv
+    
+    # Crea un buffer in memoria per il CSV
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    # Intestazioni del CSV
+    writer.writerow(['date', 'type', 'quantity', 'price', 'fee', 'notes'])
+    
+    # Riga di esempio
+    writer.writerow(['2023-06-15', 'buy', '10', '50.50', '1.50', 'Acquisto tramite broker'])
+    
+    # Prepara la risposta
+    from flask import make_response
+    output.seek(0)
+    response = make_response(output.getvalue())
+    response.headers['Content-Disposition'] = 'attachment; filename=transaction_template.csv'
+    response.headers['Content-Type'] = 'text/csv'
+    
+    return response
+
 
 
 if __name__ == '__main__':

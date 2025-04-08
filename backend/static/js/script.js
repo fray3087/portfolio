@@ -1,20 +1,52 @@
-// Funzionalità per i modali e le interazioni utente
 document.addEventListener('DOMContentLoaded', function() {
+    // Debug globale
+    console.log("Document ready. Checking all important elements:");
+    
     // Variabili per i modali
     const addAssetModal = document.getElementById('addAssetModal');
     const addTransactionModal = document.getElementById('addTransactionModal');
+    const csvUploadModal = document.getElementById('csvUploadModal');
+    
     const addAssetBtn = document.getElementById('addAssetBtn');
+    const csvUploadBtn = document.getElementById('csvUploadBtn');
     const addTransactionBtns = document.querySelectorAll('.add-transaction-btn');
     const closeBtns = document.querySelectorAll('.close');
-    
-    // Apri il modale per aggiungere uno strumento
+
+    // Verifica elementi critici
+    const elementsToCheck = [
+        'addAssetModal', 
+        'addTransactionModal', 
+        'csvUploadModal', 
+        'addAssetBtn', 
+        'csvUploadBtn', 
+        'csvFile'
+    ];
+
+    elementsToCheck.forEach(elementId => {
+        const element = document.getElementById(elementId);
+        console.log(`${elementId}:`, element ? "FOUND ✅" : "NOT FOUND ❌");
+    });
+
+    // Funzione helper per ritardare l'esecuzione di una funzione
+    function debounce(func, wait) {
+        let timeout;
+        return function() {
+            const context = this, args = arguments;
+            clearTimeout(timeout);
+            timeout = setTimeout(() => {
+                func.apply(context, args);
+            }, wait);
+        };
+    }
+
+    // Gestione modale aggiunta strumento
     if (addAssetBtn) {
         addAssetBtn.addEventListener('click', function() {
             addAssetModal.classList.add('active');
         });
     }
-    
-    // Apri il modale per aggiungere una transazione
+
+    // Gestione modale aggiunta transazione
     addTransactionBtns.forEach(btn => {
         btn.addEventListener('click', function() {
             const symbol = this.dataset.symbol;
@@ -30,16 +62,17 @@ document.addEventListener('DOMContentLoaded', function() {
             addTransactionModal.classList.add('active');
         });
     });
-    
-    // Chiudi i modali quando si clicca sul pulsante di chiusura
+
+    // Gestione chiusura modali
     closeBtns.forEach(btn => {
         btn.addEventListener('click', function() {
             addAssetModal.classList.remove('active');
             addTransactionModal.classList.remove('active');
+            csvUploadModal.classList.remove('active');
         });
     });
-    
-    // Chiudi i modali quando si clicca all'esterno del modale
+
+    // Chiudi modali cliccando all'esterno
     window.addEventListener('click', function(event) {
         if (event.target === addAssetModal) {
             addAssetModal.classList.remove('active');
@@ -47,9 +80,139 @@ document.addEventListener('DOMContentLoaded', function() {
         if (event.target === addTransactionModal) {
             addTransactionModal.classList.remove('active');
         }
+        if (event.target === csvUploadModal) {
+            csvUploadModal.classList.remove('active');
+        }
     });
 
-    // Per il pulsante di eliminazione del portafoglio
+    // Gestione upload CSV
+    const csvUploadForm = document.getElementById('csvUploadForm');
+    if (csvUploadBtn) {
+        csvUploadBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            console.log("CSV Upload button clicked");
+            csvUploadModal.classList.add('active');
+        });
+    }
+
+    // Submit form CSV
+    if (csvUploadForm) {
+        csvUploadForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            console.log("CSV Form submit triggered");
+
+            const csvFile = document.getElementById('csvFile');
+            if (!csvFile || !csvFile.files.length) {
+                console.error("No file selected");
+                alert("Seleziona un file CSV");
+                return;
+            }
+
+            const formData = new FormData(this);
+            const addTransactionButton = document.querySelector('.add-transaction-btn');
+            
+            if (!addTransactionButton) {
+                console.error("No transaction button found");
+                alert("Nessuno strumento trovato per l'importazione");
+                return;
+            }
+
+            const symbol = addTransactionButton.dataset.symbol;
+            const portfolioId = window.location.pathname.split('/')[2];
+
+            console.log("Selected Symbol:", symbol);
+            console.log("Portfolio ID:", portfolioId);
+
+            fetch(`/portfolios/${portfolioId}/assets/${symbol}/import_csv`, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                console.log("Response status:", response.status);
+                return response.json();
+            })
+            .then(data => {
+                console.log("Server response:", data);
+                if (data.success) {
+                    alert('Transazioni importate con successo!');
+                    window.location.reload();
+                } else {
+                    alert('Errore nell\'importazione: ' + (data.error || 'Errore sconosciuto'));
+                }
+            })
+            .catch(error => {
+                console.error("Fetch error:", error);
+                alert('Errore durante l\'importazione');
+            });
+        });
+    }
+
+    // Ricerca di strumenti finanziari
+    const assetSearch = document.getElementById('assetSearch');
+    const searchResults = document.getElementById('searchResults');
+    
+    if (assetSearch) {
+        assetSearch.addEventListener('input', debounce(function() {
+            const query = this.value.trim();
+            
+            if (query.length < 2) {
+                searchResults.innerHTML = '';
+                return;
+            }
+            
+            fetch(`/search_assets?q=${encodeURIComponent(query)}`)
+            .then(response => response.json())
+            .then(data => {
+                searchResults.innerHTML = '';
+                if (data.results && data.results.length > 0) {
+                    data.results.forEach(result => {
+                        const item = document.createElement('div');
+                        item.className = 'search-result-item';
+                        item.innerHTML = `
+                            <h4>${result.name}</h4>
+                            <p>${result.symbol} <span class="asset-type">${result.type || ''}</span></p>
+                            <p class="price">${result.currency || 'USD'} ${(result.price || 0).toFixed(2)}</p>
+                        `;
+                        
+                        item.addEventListener('click', function() {
+                            addAssetToPortfolio(
+                                result.symbol, 
+                                result.name, 
+                                result.price, 
+                                result.currency, 
+                                result.type
+                            );
+                        });
+                        
+                        searchResults.appendChild(item);
+                    });
+                } else {
+                    searchResults.innerHTML = '<div class="search-result-item">Nessun risultato trovato</div>';
+                }
+            })
+            .catch(error => {
+                console.error('Errore nella ricerca:', error);
+                searchResults.innerHTML = '<div class="search-result-item">Errore nella ricerca</div>';
+            });
+        }, 300));
+    }
+    
+    // Toggle per il tipo di transazione
+    const toggleOptions = document.querySelectorAll('.toggle-option');
+    const transactionTypeSelect = document.getElementById('transactionType');
+    
+    toggleOptions.forEach(option => {
+        option.addEventListener('click', function() {
+            toggleOptions.forEach(opt => opt.classList.remove('active'));
+            
+            this.classList.add('active');
+            
+            const type = this.dataset.type;
+            transactionTypeSelect.value = type;
+        });
+    });
+    
+    // Eliminazione portafoglio
     const deletePortfolioBtns = document.querySelectorAll('.delete-portfolio-btn');
     if (deletePortfolioBtns.length > 0) {
         deletePortfolioBtns.forEach(btn => {
@@ -81,7 +244,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Per il pulsante di eliminazione dello strumento
+    // Eliminazione strumento
     const deleteAssetBtns = document.querySelectorAll('.delete-asset-btn');
     if (deleteAssetBtns.length > 0) {
         deleteAssetBtns.forEach(btn => {
@@ -113,8 +276,8 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         });
     }
-        
-    // Per il pulsante di eliminazione della transazione
+
+    // Eliminazione transazione
     const deleteTransactionBtns = document.querySelectorAll('.delete-transaction-btn');
     if (deleteTransactionBtns.length > 0) {
         deleteTransactionBtns.forEach(btn => {
@@ -157,92 +320,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Ricerca di strumenti finanziari
-    const assetSearch = document.getElementById('assetSearch');
-    const searchResults = document.getElementById('searchResults');
-    
-    if (assetSearch) {
-        assetSearch.addEventListener('input', debounce(function() {
-            const query = this.value.trim();
-            
-            if (query.length < 2) {
-                searchResults.innerHTML = '';
-                return;
-            }
-            
-            // Richiesta API per cercare gli strumenti
-            fetch(`/search_assets?q=${encodeURIComponent(query)}`)
-            .then(response => response.json())
-            .then(data => {
-                searchResults.innerHTML = '';
-                if (data.results && data.results.length > 0) {
-                    data.results.forEach(result => {
-                        const item = document.createElement('div');
-                        item.className = 'search-result-item';
-                        item.innerHTML = `
-                            <h4>${result.name}</h4>
-                            <p>${result.symbol} <span class="asset-type">${result.type || ''}</span></p>
-                            <p class="price">${result.currency || 'USD'} ${(result.price || 0).toFixed(2)}</p>
-                        `;
-                        
-                        // Aggiungi lo strumento al portafoglio quando viene cliccato
-                        item.addEventListener('click', function() {
-                            addAssetToPortfolio(
-                                result.symbol, 
-                                result.name, 
-                                result.price, 
-                                result.currency, 
-                                result.type
-                            );
-                        });
-                        
-                        searchResults.appendChild(item);
-                    });
-                } else {
-                    searchResults.innerHTML = '<div class="search-result-item">Nessun risultato trovato</div>';
-                }
-            })
-            .catch(error => {
-                console.error('Errore nella ricerca:', error);
-                searchResults.innerHTML = '<div class="search-result-item">Errore nella ricerca</div>';
-            });
-        }, 300));
-    }
-    
-    // Toggle per il tipo di transazione
-    const toggleOptions = document.querySelectorAll('.toggle-option');
-    const transactionTypeSelect = document.getElementById('transactionType');
-    
-    toggleOptions.forEach(option => {
-        option.addEventListener('click', function() {
-            // Rimuovi la classe attiva da tutte le opzioni
-            toggleOptions.forEach(opt => opt.classList.remove('active'));
-            
-            // Aggiungi la classe attiva all'opzione cliccata
-            this.classList.add('active');
-            
-            // Aggiorna il valore della select
-            const type = this.dataset.type;
-            transactionTypeSelect.value = type;
-        });
-    });
-    
-    // Calcolo dei valori del portafoglio
-    updatePortfolioSummary();
-    
-    // Funzione helper per ritardare l'esecuzione di una funzione
-    function debounce(func, wait) {
-        let timeout;
-        return function() {
-            const context = this, args = arguments;
-            clearTimeout(timeout);
-            timeout = setTimeout(() => {
-                func.apply(context, args);
-            }, wait);
-        };
-    }
-    
-    // Aggiungi lo strumento al portafoglio
+    // Aggiungi strumento al portafoglio
     function addAssetToPortfolio(symbol, name, price, currency, type) {
         const portfolioId = window.location.pathname.split('/')[2];
         
@@ -262,7 +340,6 @@ document.addEventListener('DOMContentLoaded', function() {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                // Ricarica la pagina per mostrare il nuovo strumento
                 window.location.reload();
             } else {
                 alert(data.error || 'Errore nell\'aggiunta dello strumento');
@@ -273,9 +350,13 @@ document.addEventListener('DOMContentLoaded', function() {
             alert('Errore nella richiesta');
         });
     }
+
+    // Calcolo dei valori del portafoglio
+    updatePortfolioSummary();
 });
 
-// Funzione helper per aggiornare un singolo elemento di performance
+// Funzioni esterne
+
 function updatePerformanceItem(parentElement, selector, value, allowNull = false) {
     const element = parentElement.querySelector(selector);
     if (!element) return;
@@ -290,30 +371,24 @@ function updatePerformanceItem(parentElement, selector, value, allowNull = false
     element.className = `value ${selector.substring(1)} ${parseFloat(value) >= 0 ? 'positive' : 'negative'}`;
 }
 
-// Funzione per aggiornare i dati di performance di un asset
 function updateAssetPerformance(element, data) {
     if (!element) return;
     
-    // Aggiorna la quantità
     const netQuantity = element.querySelector('.net-quantity');
     if (netQuantity) netQuantity.textContent = parseFloat(data.net_quantity).toFixed(2);
     
-    // Aggiorna il costo medio
     const avgCost = element.querySelector('.avg-cost');
     if (avgCost) avgCost.textContent = `€ ${parseFloat(data.avg_cost).toFixed(2)}`;
     
-    // Aggiorna il valore attuale
     const currentValue = element.querySelector('.current-value');
     if (currentValue) currentValue.textContent = `€ ${parseFloat(data.current_value).toFixed(2)}`;
     
-    // Aggiorna il profitto/perdita
     const plValue = element.querySelector('.pl-value');
     if (plValue) {
         plValue.textContent = `€ ${parseFloat(data.pl_value).toFixed(2)} (${parseFloat(data.pl_percent).toFixed(2)}%)`;
         plValue.className = `value pl-value ${data.pl_value >= 0 ? 'positive' : 'negative'}`;
     }
     
-    // Aggiorna le variazioni
     updatePerformanceItem(element, '.daily-change', data.daily_change);
     updatePerformanceItem(element, '.weekly-change', data.weekly_change);
     updatePerformanceItem(element, '.monthly-change', data.monthly_change);
@@ -324,12 +399,10 @@ function updateAssetPerformance(element, data) {
     updatePerformanceItem(element, '.since-inception-change', data.since_inception_change);
 }
 
-// Funzione per aggiornare il sommario del portafoglio e tutti i dati di performance
 function updatePortfolioSummary() {
     console.log("Esecuzione updatePortfolioSummary iniziata");
     const portfolioId = window.location.pathname.split('/')[2];
     
-    // Elementi del sommario del portafoglio
     const totalValue = document.getElementById('totalValue');
     const dailyChange = document.getElementById('dailyChange');
     const dailyChangePercent = document.getElementById('dailyChangePercent');
@@ -341,12 +414,10 @@ function updatePortfolioSummary() {
         return;
     }
     
-    // Variabili per il calcolo del totale
     let currentTotalValue = 0;
     let yesterdayTotalValue = 0;
     let initialInvestment = 0;
     
-    // Richiesta API per aggiornare i prezzi
     console.log(`Richiesta API per portfolio ${portfolioId}`);
     fetch(`/portfolios/${portfolioId}/update_prices`, {
         method: 'POST',
@@ -370,7 +441,6 @@ function updatePortfolioSummary() {
         
         console.log("Dati degli asset:", data.data);
         
-        // Aggiorna i dati per ogni asset
         const assetCards = document.querySelectorAll('.asset-card');
         assetCards.forEach(card => {
             const deleteBtn = card.querySelector('.delete-asset-btn');
@@ -384,11 +454,9 @@ function updatePortfolioSummary() {
                 return;
             }
             
-            // Aggiorna il prezzo corrente
             const priceElement = card.querySelector('.price-value');
             if (priceElement) priceElement.textContent = parseFloat(asset.current_price).toFixed(2);
             
-            // Aggiorna le informazioni di performance
             const safeSymbol = symbol.replace(/\./g, '_');
             const performanceElement = card.querySelector(`#performance-${safeSymbol}`);
             
@@ -399,16 +467,13 @@ function updatePortfolioSummary() {
                 console.warn(`Elemento performance NON trovato per ${symbol} (cercato #performance-${safeSymbol})`);
             }
             
-            // Calcola il valore totale per il sommario
             currentTotalValue += parseFloat(asset.current_value);
             yesterdayTotalValue += parseFloat(asset.current_value) / (1 + parseFloat(asset.daily_change) / 100);
             initialInvestment += parseFloat(asset.avg_cost) * parseFloat(asset.net_quantity);
         });
         
-        // Aggiorna il sommario del portafoglio
         totalValue.textContent = currentTotalValue.toFixed(2);
         
-        // Calcola la variazione giornaliera
         const dailyChangeValue = currentTotalValue - yesterdayTotalValue;
         if (dailyChange) dailyChange.textContent = dailyChangeValue.toFixed(2);
         
@@ -419,7 +484,6 @@ function updatePortfolioSummary() {
             dailyChangePercent.className = 'change ' + (dailyChangePercentValue >= 0 ? 'positive' : 'negative');
         }
         
-        // Calcola la performance totale
         const totalPerfValue = currentTotalValue - initialInvestment;
         if (totalPerformance) totalPerformance.textContent = totalPerfValue.toFixed(2);
         
@@ -430,7 +494,6 @@ function updatePortfolioSummary() {
             totalPerformancePercent.className = 'change ' + (totalPerfPercentValue >= 0 ? 'positive' : 'negative');
         }
         
-        // Aggiorna la performance per diversi periodi
         updatePerformancePeriods(portfolioId);
     })
     .catch(error => {
@@ -438,7 +501,6 @@ function updatePortfolioSummary() {
     });
 }
 
-// Funzione per aggiornare le performance su diversi periodi
 function updatePerformancePeriods(portfolioId) {
     const periods = ['1m', '3m', '6m', 'ytd', '1y'];
     const cardIds = [
@@ -472,101 +534,4 @@ function updatePerformancePeriods(portfolioId) {
             console.error(`Errore nel recupero dei dati di performance per ${period}:`, error);
         });
     });
-
-    
-// Da aggiungere a script.js
-
-document.addEventListener('DOMContentLoaded', function() {
-    // Ottieni riferimenti agli elementi della pagina
-    const csvUploadModal = document.getElementById('csvUploadModal');
-    const csvUploadBtn = document.getElementById('csvUploadBtn');
-    
-    // Aggiungi event listener per aprire il modale di upload CSV
-    if (csvUploadBtn) {
-        csvUploadBtn.addEventListener('click', function() {
-            csvUploadModal.classList.add('active');
-        });
-    }
-    
-    // Aggiorna il gestore di chiusura per includere il nuovo modale
-    const closeBtns = document.querySelectorAll('.close');
-    closeBtns.forEach(btn => {
-        btn.addEventListener('click', function() {
-            if (this.closest('.modal')) {
-                this.closest('.modal').classList.remove('active');
-            }
-        });
-    });
-    
-    // Chiudi i modali quando si clicca all'esterno
-    window.addEventListener('click', function(event) {
-        if (event.target.classList.contains('modal')) {
-            event.target.classList.remove('active');
-        }
-    });
-    
-    // Gestisci l'invio del form CSV
-    const csvUploadForm = document.getElementById('csvUploadForm');
-    if (csvUploadForm) {
-        csvUploadForm.addEventListener('submit', function(e) {
-            // Ottieni l'asset selezionato
-            // In una pagina di asset specifico, useremo il simbolo dalla URL
-            // In una pagina portfolio, chiederemo all'utente di selezionare un asset
-            const assetSelector = document.getElementById('assetSelector');
-            let symbol;
-            
-            if (assetSelector) {
-                // Siamo nella pagina del portfolio generale
-                symbol = assetSelector.value;
-                if (!symbol) {
-                    e.preventDefault();
-                    alert('Seleziona uno strumento prima di caricare il CSV');
-                    return;
-                }
-            } else {
-                // Siamo nella pagina di un asset specifico
-                // Ottieni il simbolo dall'URL o da altro elemento della pagina
-                const addTransactionBtn = document.querySelector('.add-transaction-btn');
-                if (addTransactionBtn) {
-                    symbol = addTransactionBtn.dataset.symbol;
-                }
-                
-                if (!symbol) {
-                    e.preventDefault();
-                    alert('Impossibile determinare lo strumento per l\'importazione');
-                    return;
-                }
-            }
-            
-            // Imposta l'URL di destinazione
-            const portfolioId = window.location.pathname.split('/')[2];
-            csvUploadForm.action = `/portfolios/${portfolioId}/assets/${symbol}/import_csv`;
-            
-            // Continua con il submit
-            // Il form ha già enctype="multipart/form-data" quindi i file verranno inviati correttamente
-        });
-    }
-    
-    // Se siamo nella pagina principale del portfolio, aggiungiamo un selettore di asset
-    if (csvUploadForm && !document.querySelector('.add-transaction-btn')) {
-        // Crea un selettore di asset
-        const inputGroup = document.createElement('div');
-        inputGroup.className = 'input-group';
-        inputGroup.innerHTML = `
-            <label for="assetSelector">Seleziona Strumento</label>
-            <select id="assetSelector" name="asset" required>
-                <option value="">-- Seleziona uno strumento --</option>
-                ${Array.from(document.querySelectorAll('.asset-card h3')).map(el => {
-                    const symbol = el.closest('.asset-card').querySelector('.delete-asset-btn').dataset.symbol;
-                    return `<option value="${symbol}">${el.textContent}</option>`;
-                }).join('')}
-            </select>
-        `;
-        
-        // Inserisci il selettore all'inizio del form
-        csvUploadForm.insertBefore(inputGroup, csvUploadForm.firstChild);
-    }
-});
-
-
 }
